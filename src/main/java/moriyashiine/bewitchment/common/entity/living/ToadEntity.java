@@ -5,6 +5,7 @@ import moriyashiine.bewitchment.common.registry.BWEntityTypes;
 import moriyashiine.bewitchment.common.registry.BWSoundEvents;
 import net.minecraft.block.BlockState;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.ai.goal.*;
 import net.minecraft.entity.ai.pathing.PathNodeType;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
@@ -23,6 +24,8 @@ import net.minecraft.sound.SoundEvent;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.UUID;
 
 @SuppressWarnings("ConstantConditions")
 public class ToadEntity extends BWTameableEntity {
@@ -65,15 +68,18 @@ public class ToadEntity extends BWTameableEntity {
 	@Override
 	public PassiveEntity createChild(ServerWorld world, PassiveEntity entity) {
 		ToadEntity child = BWEntityTypes.TOAD.create(world);
-		if (child != null && entity instanceof ToadEntity) {
-			child.dataTracker.set(VARIANT, random.nextBoolean() ? dataTracker.get(VARIANT) : entity.getDataTracker().get(VARIANT));
+		if (child != null) {
+			child.initialize(world, world.getLocalDifficulty(getBlockPos()), SpawnReason.BREEDING, null, null);
+			UUID owner = getOwnerUuid();
+			if (owner != null) {
+				child.setOwnerUuid(owner);
+				child.setTamed(true);
+			}
+			if (entity instanceof ToadEntity && random.nextFloat() < 95 / 100f) {
+				child.dataTracker.set(VARIANT, random.nextBoolean() ? dataTracker.get(VARIANT) : entity.getDataTracker().get(VARIANT));
+			}
 		}
 		return child;
-	}
-	
-	@Override
-	protected boolean shouldDropLoot() {
-		return super.shouldDropLoot() && !isFromWednesdayRitual;
 	}
 	
 	@Nullable
@@ -90,6 +96,11 @@ public class ToadEntity extends BWTameableEntity {
 	@Override
 	protected SoundEvent getDeathSound() {
 		return BWSoundEvents.ENTITY_TOAD_DEATH;
+	}
+	
+	@Override
+	protected boolean shouldDropLoot() {
+		return super.shouldDropLoot() && !isFromWednesdayRitual;
 	}
 	
 	@Override

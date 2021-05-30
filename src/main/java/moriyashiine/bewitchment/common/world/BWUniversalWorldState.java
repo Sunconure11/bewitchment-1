@@ -14,8 +14,7 @@ import java.util.List;
 import java.util.UUID;
 
 public class BWUniversalWorldState extends PersistentState {
-	public final List<Pair<UUID, List<UUID>>> pledges = new ArrayList<>();
-	public final List<Pair<UUID, UUID>> specificPledges = new ArrayList<>();
+	public final List<UUID> pledgesToRemove = new ArrayList<>();
 	public final List<Pair<UUID, CompoundTag>> familiars = new ArrayList<>();
 	
 	public BWUniversalWorldState(String key) {
@@ -24,32 +23,17 @@ public class BWUniversalWorldState extends PersistentState {
 	
 	@Override
 	public CompoundTag toTag(CompoundTag tag) {
-		ListTag pledges = new ListTag();
-		for (Pair<UUID, List<UUID>> pair : this.pledges) {
-			CompoundTag pledgeTag = new CompoundTag();
-			pledgeTag.putUuid("PledgeUUID", pair.getLeft());
-			ListTag players = new ListTag();
-			for (int i = 0; i < pair.getRight().size(); i++) {
-				CompoundTag playerTag = new CompoundTag();
-				playerTag.putUuid("PlayerUUID" + i, pair.getRight().get(i));
-				players.add(playerTag);
-			}
-			pledgeTag.put("Players", players);
-			pledges.add(pledgeTag);
+		ListTag pledgesToRemove = new ListTag();
+		for (UUID uuid : this.pledgesToRemove) {
+			CompoundTag toRemove = new CompoundTag();
+			toRemove.putUuid("UUID", uuid);
+			pledgesToRemove.add(toRemove);
 		}
-		tag.put("Pledges", pledges);
-		ListTag specificPledges = new ListTag();
-		for (Pair<UUID, UUID> pair : this.specificPledges) {
-			CompoundTag pledgeTag = new CompoundTag();
-			pledgeTag.putUuid("PlayerUUID", pair.getLeft());
-			pledgeTag.putUuid("PledgeUUID", pair.getRight());
-			specificPledges.add(pledgeTag);
-		}
-		tag.put("SpecificPledges", specificPledges);
+		tag.put("PledgesToRemove", pledgesToRemove);
 		ListTag familiars = new ListTag();
 		for (Pair<UUID, CompoundTag> pair : this.familiars) {
 			CompoundTag familiarTag = new CompoundTag();
-			familiarTag.putUuid("PlayerUUID", pair.getLeft());
+			familiarTag.putUuid("Player", pair.getLeft());
 			familiarTag.put("Familiar", pair.getRight());
 			familiars.add(familiarTag);
 		}
@@ -59,30 +43,18 @@ public class BWUniversalWorldState extends PersistentState {
 	
 	@Override
 	public void fromTag(CompoundTag tag) {
-		ListTag pledges = tag.getList("Pledges", NbtType.COMPOUND);
-		for (int i = 0; i < pledges.size(); i++) {
-			CompoundTag pledgeTag = pledges.getCompound(i);
-			List<UUID> players = new ArrayList<>();
-			ListTag playersTag = pledgeTag.getList("Players", NbtType.COMPOUND);
-			for (int j = 0; j < playersTag.size(); j++) {
-				CompoundTag player = playersTag.getCompound(j);
-				players.add(player.getUuid("PlayerUUID" + j));
-			}
-			this.pledges.add(new Pair<>(pledgeTag.getUuid("PledgeUUID"), players));
-		}
-		ListTag specificPledges = tag.getList("SpecificPledges", NbtType.COMPOUND);
-		for (int i = 0; i < specificPledges.size(); i++) {
-			CompoundTag pledgeTag = specificPledges.getCompound(i);
-			this.specificPledges.add(new Pair<>(pledgeTag.getUuid("PlayerUUID"), pledgeTag.getUuid("PledgeUUID")));
+		ListTag pledgesToRemove = tag.getList("PledgesToRemove", NbtType.COMPOUND);
+		for (int i = 0; i < pledgesToRemove.size(); i++) {
+			this.pledgesToRemove.add(pledgesToRemove.getCompound(i).getUuid("UUID"));
 		}
 		ListTag familiars = tag.getList("Familiars", NbtType.COMPOUND);
 		for (int i = 0; i < familiars.size(); i++) {
 			CompoundTag familiarTag = familiars.getCompound(i);
-			this.familiars.add(new Pair<>(familiarTag.getUuid("PlayerUUID"), familiarTag.getCompound("Familiar")));
+			this.familiars.add(new Pair<>(familiarTag.getUuid("Player"), familiarTag.getCompound("Familiar")));
 		}
 	}
 	
 	public static BWUniversalWorldState get(World world) {
-		return ((ServerWorld) world).getPersistentStateManager().getOrCreate(() -> new BWUniversalWorldState(Bewitchment.MODID + "_universal"), Bewitchment.MODID + "_universal");
+		return ((ServerWorld) world).getServer().getOverworld().getPersistentStateManager().getOrCreate(() -> new BWUniversalWorldState(Bewitchment.MODID + "_universal"), Bewitchment.MODID + "_universal");
 	}
 }

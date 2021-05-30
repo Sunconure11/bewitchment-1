@@ -4,6 +4,7 @@ import moriyashiine.bewitchment.api.BewitchmentAPI;
 import moriyashiine.bewitchment.api.interfaces.block.entity.UsesAltarPower;
 import moriyashiine.bewitchment.client.network.packet.SyncClientSerializableBlockEntity;
 import moriyashiine.bewitchment.common.item.TaglockItem;
+import moriyashiine.bewitchment.common.misc.BWUtil;
 import moriyashiine.bewitchment.common.recipe.CauldronBrewingRecipe;
 import moriyashiine.bewitchment.common.recipe.OilRecipe;
 import moriyashiine.bewitchment.common.registry.*;
@@ -26,9 +27,6 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.particle.DustParticleEffect;
-import net.minecraft.particle.ParticleEffect;
-import net.minecraft.particle.ParticleTypes;
 import net.minecraft.potion.PotionUtil;
 import net.minecraft.potion.Potions;
 import net.minecraft.server.world.ServerWorld;
@@ -150,37 +148,8 @@ public class WitchCauldronBlockEntity extends BlockEntity implements BlockEntity
 				loaded = true;
 			}
 			heatTimer = MathHelper.clamp(heatTimer + (getCachedState().get(Properties.LIT) && getCachedState().get(Properties.LEVEL_3) > 0 ? 1 : -1), 0, 160);
-			if (world.isClient) {
-				if (heatTimer >= 60) {
-					float fluidHeight = 0;
-					float width = 0.35f;
-					switch (getCachedState().get(Properties.LEVEL_3)) {
-						case 1:
-							fluidHeight = 0.225f;
-							break;
-						case 2:
-							fluidHeight = 0.425f;
-							width = 0.3f;
-							break;
-						case 3:
-							fluidHeight = 0.625f;
-					}
-					if (fluidHeight > 0) {
-						if (mode == Mode.TELEPORTATION) {
-							world.addParticle(new DustParticleEffect(((color >> 16) & 0xff) / 255f, ((color >> 8) & 0xff) / 255f, (color & 0xff) / 255f, 1), pos.getX() + 0.5 + MathHelper.nextDouble(world.random, -width, width), pos.getY() + fluidHeight, pos.getZ() + 0.5 + MathHelper.nextDouble(world.random, -width, width), 0, 0, 0);
-						}
-						if (mode == Mode.OIL_CRAFTING && color != 0xde6fa1) {
-							world.addParticle(ParticleTypes.ENCHANTED_HIT, pos.getX() + 0.5 + MathHelper.nextDouble(world.random, -width, width), pos.getY() + fluidHeight, pos.getZ() + 0.5 + MathHelper.nextDouble(world.random, -width, width), 0, 0, 0);
-						}
-						if (mode == Mode.BREWING) {
-							world.addParticle(ParticleTypes.ENTITY_EFFECT, pos.getX() + 0.5 + MathHelper.nextDouble(world.random, -width, width), pos.getY() + fluidHeight, pos.getZ() + 0.5 + MathHelper.nextDouble(world.random, -width, width), ((color >> 16) & 0xff) / 255f, ((color >> 8) & 0xff) / 255f, (color & 0xff) / 255f);
-						}
-						world.addParticle((ParticleEffect) BWParticleTypes.CAULDRON_BUBBLE, pos.getX() + 0.5 + MathHelper.nextDouble(world.random, -width, width), pos.getY() + fluidHeight, pos.getZ() + 0.5 + MathHelper.nextDouble(world.random, -width, width), ((color >> 16) & 0xff) / 255f, ((color >> 8) & 0xff) / 255f, (color & 0xff) / 255f);
-					}
-				}
-			}
-			else {
-				if (getCachedState().get(Properties.LEVEL_3) > 0 && heatTimer >= 60) {
+			if (!world.isClient) {
+				if (heatTimer >= 60 && getCachedState().get(Properties.LEVEL_3) > 0) {
 					if (world.random.nextFloat() <= 0.075f) {
 						world.playSound(null, pos, SoundEvents.BLOCK_BUBBLE_COLUMN_UPWARDS_AMBIENT, SoundCategory.BLOCKS, 1 / 3f, mode == Mode.FAILED ? 0.5f : 1);
 					}
@@ -213,7 +182,7 @@ public class WitchCauldronBlockEntity extends BlockEntity implements BlockEntity
 	@Override
 	public boolean isEmpty() {
 		for (int i = 0; i < size(); i++) {
-			if (getStack(i).isEmpty()){
+			if (getStack(i).isEmpty()) {
 				return false;
 			}
 		}
@@ -303,13 +272,7 @@ public class WitchCauldronBlockEntity extends BlockEntity implements BlockEntity
 					}
 					if (mode == Mode.BREWING) {
 						CauldronBrewingRecipe cauldronBrewingRecipe = world.getRecipeManager().listAllOfType(BWRecipeTypes.CAULDRON_BREWING_RECIPE_TYPE).stream().filter(recipe -> recipe.input.test(stack)).findFirst().orElse(null);
-						int glowstone = 0;
-						for (int i = 0; i < size(); i++) {
-							if (getStack(i).getItem() == Items.GLOWSTONE_DUST) {
-								glowstone++;
-							}
-						}
-						if (cauldronBrewingRecipe != null || (firstEmpty > 0 && (stack.getItem() == Items.REDSTONE || (stack.getItem() == Items.GLOWSTONE_DUST && glowstone == 1)))) {
+						if (cauldronBrewingRecipe != null || stack.getItem() == Items.REDSTONE || stack.getItem() == Items.GLOWSTONE_DUST) {
 							BlockPos altarPos = getAltarPos();
 							if (altarPos != null && ((WitchAltarBlockEntity) world.getBlockEntity(altarPos)).drain(getBrewCost(), true)) {
 								setColor(PotionUtil.getColor(getPotion(null)));
@@ -328,7 +291,7 @@ public class WitchCauldronBlockEntity extends BlockEntity implements BlockEntity
 							setColor(0x319a89);
 							return Mode.TELEPORTATION;
 						}
-						setColor(0xde6fa1);
+						setColor(0xfc00fc);
 						return Mode.OIL_CRAFTING;
 					}
 				}
@@ -341,7 +304,9 @@ public class WitchCauldronBlockEntity extends BlockEntity implements BlockEntity
 		ItemStack stack = new ItemStack(Items.POTION);
 		if (world != null) {
 			List<StatusEffectInstance> effects = new ArrayList<>();
-			int redstone = 0, amplifierBoost = creator != null && BewitchmentAPI.isPledged(world, BWPledges.LEONARD_UUID, creator.getUuid()) ? 1 : 0;
+			int durationBoost = creator != null && BWUtil.getArmorPieces(creator, armorStack -> armorStack.getItem() instanceof ArmorItem && ((ArmorItem) armorStack.getItem()).getMaterial() == BWMaterials.ALCHEMIST_ARMOR) >= 3 ? 1 : 0;
+			int amplifierBoost = 0;
+			boolean leonard = creator instanceof PlayerEntity && BewitchmentAPI.isPledged((PlayerEntity) creator, BWPledges.LEONARD);
 			for (int i = 0; i < size(); i++) {
 				ItemStack stackInSlot = getStack(i);
 				if (stackInSlot.getItem() instanceof TaglockItem && TaglockItem.isTaglockFromPlayer(stackInSlot)) {
@@ -349,22 +314,29 @@ public class WitchCauldronBlockEntity extends BlockEntity implements BlockEntity
 					stack.getOrCreateTag().putString("PolymorphName", TaglockItem.getTaglockName(stackInSlot));
 				}
 				CauldronBrewingRecipe cauldronBrewingRecipe = world.getRecipeManager().listAllOfType(BWRecipeTypes.CAULDRON_BREWING_RECIPE_TYPE).stream().filter(recipe -> recipe.input.test(stackInSlot)).findFirst().orElse(null);
-				if (cauldronBrewingRecipe != null) {
+				if (cauldronBrewingRecipe != null && effects.stream().noneMatch(effect -> effect.getEffectType() == cauldronBrewingRecipe.output)) {
 					effects.add(new StatusEffectInstance(cauldronBrewingRecipe.output, cauldronBrewingRecipe.time));
 				}
 				else if (stackInSlot.getItem() == Items.REDSTONE) {
-					redstone++;
+					durationBoost++;
 				}
 				else if (stackInSlot.getItem() == Items.GLOWSTONE_DUST) {
 					amplifierBoost++;
 				}
 			}
 			for (int i = 0; i < effects.size(); i++) {
-				for (int j = 0; j < redstone; j++) {
-					effects.set(i, new StatusEffectInstance(effects.get(i).getEffectType(), effects.get(i).getDuration() * 2));
+				for (int j = 0; j < durationBoost; j++) {
+					StatusEffect type = effects.get(i).getEffectType();
+					int duration = effects.get(i).getDuration();
+					effects.set(i, new StatusEffectInstance(type, type.isInstant() ? duration : duration * 2));
 				}
-				if (amplifierBoost > 0) {
-					effects.set(i, new StatusEffectInstance(effects.get(i).getEffectType(), effects.get(i).getDuration() / 2, effects.get(i).getAmplifier() + amplifierBoost));
+				for (int j = 0; j < amplifierBoost && j < 2; j++) {
+					if (j == 1 && !leonard) {
+						break;
+					}
+					StatusEffect type = effects.get(i).getEffectType();
+					int duration = effects.get(i).getDuration();
+					effects.set(i, new StatusEffectInstance(type, type.isInstant() ? duration : duration / 2, effects.get(i).getAmplifier() + 1));
 				}
 			}
 			List<StatusEffectInstance> finalEffects = new ArrayList<>();
@@ -372,17 +344,12 @@ public class WitchCauldronBlockEntity extends BlockEntity implements BlockEntity
 				if (effects.get(i).getEffectType() == BWStatusEffects.CORRUPTION) {
 					finalEffects.add(effects.remove(i));
 				}
-			}
-			finalEffects.addAll(effects);
-			if (creator != null) {
-				if (BewitchmentAPI.getArmorPieces(creator, armorStack -> armorStack.getItem() instanceof ArmorItem && ((ArmorItem) armorStack.getItem()).getMaterial() == BWMaterials.ALCHEMIST_ARMOR) >= 3) {
-					for (int i = 0; i < finalEffects.size(); i++) {
-						StatusEffect type = finalEffects.get(i).getEffectType();
-						int duration = finalEffects.get(i).getDuration();
-						finalEffects.set(i, new StatusEffectInstance(type, type.isInstant() ? duration : duration * 2, finalEffects.get(i).getAmplifier()));
-					}
+				else if (effects.get(i).getEffectType() == BWStatusEffects.POLYMORPH) {
+					StatusEffectInstance removed = effects.remove(i);
+					finalEffects.add(new StatusEffectInstance(removed.getEffectType(), removed.getDuration(), removed.getAmplifier(), removed.isAmbient(), false, removed.shouldShowIcon()));
 				}
 			}
+			finalEffects.addAll(effects);
 			PotionUtil.setCustomPotionEffects(stack, finalEffects);
 			stack.getOrCreateTag().putInt("CustomPotionColor", PotionUtil.getColor(finalEffects));
 			stack.getOrCreateTag().putBoolean("BewitchmentBrew", true);

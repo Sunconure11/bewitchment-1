@@ -5,6 +5,7 @@ import moriyashiine.bewitchment.api.interfaces.block.entity.UsesAltarPower;
 import moriyashiine.bewitchment.api.registry.RitualFunction;
 import moriyashiine.bewitchment.client.network.packet.SpawnSmokeParticlesPacket;
 import moriyashiine.bewitchment.client.network.packet.SyncClientSerializableBlockEntity;
+import moriyashiine.bewitchment.common.Bewitchment;
 import moriyashiine.bewitchment.common.block.GlyphBlock;
 import moriyashiine.bewitchment.common.item.WaystoneItem;
 import moriyashiine.bewitchment.common.recipe.RitualRecipe;
@@ -140,6 +141,7 @@ public class GlyphBlockEntity extends BlockEntity implements BlockEntityClientSe
 				if (timer >= 0) {
 					ritualFunction.tick(world, pos, targetPos, catFamiliar);
 					if (!world.isClient) {
+						world.getWorldChunk(effectivePos);
 						if (timer == 0) {
 							ritualFunction.start((ServerWorld) world, pos, targetPos, this, catFamiliar);
 							world.playSound(null, pos, BWSoundEvents.BLOCK_GLYPH_PLING, SoundCategory.BLOCKS, 1, 1);
@@ -167,7 +169,7 @@ public class GlyphBlockEntity extends BlockEntity implements BlockEntityClientSe
 	@Override
 	public boolean isEmpty() {
 		for (int i = 0; i < size(); i++) {
-			if (getStack(i).isEmpty()){
+			if (getStack(i).isEmpty()) {
 				return false;
 			}
 		}
@@ -212,7 +214,7 @@ public class GlyphBlockEntity extends BlockEntity implements BlockEntityClientSe
 	
 	public void onUse(World world, BlockPos pos, PlayerEntity player, Hand hand, LivingEntity sacrifice) {
 		ItemStack stack = player.getStackInHand(hand);
-		if (ritualFunction != null && stack.getItem() instanceof WaystoneItem && stack.hasTag() && stack.getOrCreateTag().contains("LocationPos")) {
+		if (ritualFunction != null && pos.equals(effectivePos) && stack.getItem() instanceof WaystoneItem && stack.hasTag() && stack.getOrCreateTag().contains("LocationPos")) {
 			effectivePos = BlockPos.fromLong(stack.getOrCreateTag().getLong("LocationPos"));
 			stack.damage(1, player, user -> user.sendToolBreakStatus(hand));
 			syncGlyph();
@@ -246,7 +248,7 @@ public class GlyphBlockEntity extends BlockEntity implements BlockEntityClientSe
 							return;
 						}
 						world.playSound(null, pos, BWSoundEvents.BLOCK_GLYPH_FAIL, SoundCategory.BLOCKS, 1, 1);
-						player.sendMessage(new TranslatableText("bewitchment.insufficent_altar_power"), true);
+						player.sendMessage(new TranslatableText(Bewitchment.MODID + ".message.insufficent_altar_power"), true);
 						return;
 					}
 					world.playSound(null, pos, BWSoundEvents.BLOCK_GLYPH_FAIL, SoundCategory.BLOCKS, 1, 1);
@@ -254,7 +256,7 @@ public class GlyphBlockEntity extends BlockEntity implements BlockEntityClientSe
 					return;
 				}
 				world.playSound(null, pos, BWSoundEvents.BLOCK_GLYPH_FAIL, SoundCategory.BLOCKS, 1, 1);
-				player.sendMessage(new TranslatableText("ritual.null"), true);
+				player.sendMessage(new TranslatableText("ritual.none"), true);
 			}
 			else if (sacrifice == null) {
 				world.playSound(null, pos, BWSoundEvents.BLOCK_GLYPH_FAIL, SoundCategory.BLOCKS, 1, 1);

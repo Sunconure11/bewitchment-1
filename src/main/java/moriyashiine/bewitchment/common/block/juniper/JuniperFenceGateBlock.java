@@ -1,7 +1,7 @@
 package moriyashiine.bewitchment.common.block.juniper;
 
-import moriyashiine.bewitchment.common.block.entity.interfaces.TaglockHolder;
 import moriyashiine.bewitchment.common.block.entity.TaglockHolderBlockEntity;
+import moriyashiine.bewitchment.common.block.entity.interfaces.TaglockHolder;
 import net.minecraft.block.BlockEntityProvider;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.FenceGateBlock;
@@ -32,10 +32,7 @@ public class JuniperFenceGateBlock extends FenceGateBlock implements BlockEntity
 	
 	@Override
 	public ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, Hand hand, BlockHitResult hit) {
-		ActionResult result = TaglockHolder.onUse(world, pos, player);
-		if (result != ActionResult.PASS) {
-			return result;
-		}
+		TaglockHolder.onUse(world, pos, player);
 		return super.onUse(state, world, pos, player, hand, hit);
 	}
 	

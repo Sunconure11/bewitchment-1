@@ -9,6 +9,7 @@ import net.minecraft.block.BlockState;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.ai.goal.*;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
@@ -29,6 +30,8 @@ import net.minecraft.sound.SoundEvent;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.UUID;
 
 @SuppressWarnings("ConstantConditions")
 public class SnakeEntity extends BWTameableEntity {
@@ -76,8 +79,16 @@ public class SnakeEntity extends BWTameableEntity {
 	@Override
 	public PassiveEntity createChild(ServerWorld world, PassiveEntity entity) {
 		SnakeEntity child = BWEntityTypes.SNAKE.create(world);
-		if (child != null && entity instanceof SnakeEntity) {
-			child.dataTracker.set(VARIANT, random.nextBoolean() ? dataTracker.get(VARIANT) : entity.getDataTracker().get(VARIANT));
+		if (child != null) {
+			child.initialize(world, world.getLocalDifficulty(getBlockPos()), SpawnReason.BREEDING, null, null);
+			UUID owner = getOwnerUuid();
+			if (owner != null) {
+				child.setOwnerUuid(owner);
+				child.setTamed(true);
+			}
+			if (entity instanceof SnakeEntity && random.nextFloat() < 95 / 100f) {
+				child.dataTracker.set(VARIANT, random.nextBoolean() ? dataTracker.get(VARIANT) : entity.getDataTracker().get(VARIANT));
+			}
 		}
 		return child;
 	}
@@ -153,7 +164,13 @@ public class SnakeEntity extends BWTameableEntity {
 	protected void initGoals() {
 		goalSelector.add(0, new SwimGoal(this));
 		goalSelector.add(1, new SitGoal(this));
-		goalSelector.add(2, new PounceAtTargetGoal(this, 0.25f));
+		goalSelector.add(2, new PounceAtTargetGoal(this, 0.25f) {
+			@Override
+			public void start() {
+				super.start();
+				toggleAttack(true);
+			}
+		});
 		goalSelector.add(3, new MeleeAttackGoal(this, 1, true));
 		goalSelector.add(4, new FollowOwnerGoal(this, 1, 10, 2, false));
 		goalSelector.add(5, new AnimalMateGoal(this, 1));

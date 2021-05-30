@@ -1,8 +1,10 @@
 package moriyashiine.bewitchment.common.block.elder;
 
 import com.terraformersmc.terraform.wood.block.TerraformDoorBlock;
-import moriyashiine.bewitchment.common.block.entity.interfaces.Lockable;
 import moriyashiine.bewitchment.common.block.entity.LockableBlockEntity;
+import moriyashiine.bewitchment.common.block.entity.interfaces.Lockable;
+import moriyashiine.bewitchment.common.block.util.interfaces.SpecialDoor;
+import net.minecraft.block.Block;
 import net.minecraft.block.BlockEntityProvider;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
@@ -19,7 +21,7 @@ import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
 @SuppressWarnings("ConstantConditions")
-public class ElderDoorBlock extends TerraformDoorBlock implements BlockEntityProvider {
+public class ElderDoorBlock extends TerraformDoorBlock implements BlockEntityProvider, SpecialDoor {
 	public ElderDoorBlock(Settings settings) {
 		super(settings);
 	}
@@ -32,11 +34,16 @@ public class ElderDoorBlock extends TerraformDoorBlock implements BlockEntityPro
 	
 	@Override
 	public ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, Hand hand, BlockHitResult hit) {
-		ActionResult result = Lockable.onUse(world, state.get(HALF) == DoubleBlockHalf.UPPER ? pos.down() : pos, player, hand);
+		ActionResult result = onSpecialUse(state, world, pos, player, hand);
 		if (result != ActionResult.PASS) {
 			return result;
 		}
 		return super.onUse(state, world, pos, player, hand, hit);
+	}
+	
+	@Override
+	public ActionResult onSpecialUse(BlockState state, World world, BlockPos pos, LivingEntity user, Hand hand) {
+		return Lockable.onUse(world, state.get(HALF) == DoubleBlockHalf.UPPER ? pos.down() : pos, user, hand);
 	}
 	
 	@Override
@@ -50,4 +57,15 @@ public class ElderDoorBlock extends TerraformDoorBlock implements BlockEntityPro
 			blockEntity.markDirty();
 		}
 	}
+	
+	@Override
+	public void neighborUpdate(BlockState state, World world, BlockPos pos, Block block, BlockPos fromPos, boolean notify) {
+		BlockEntity blockEntity = world.getBlockEntity(state.get(HALF) == DoubleBlockHalf.UPPER ? pos.down() : pos);
+		if (blockEntity instanceof Lockable && ((Lockable) blockEntity).getLocked()) {
+			return;
+		}
+		super.neighborUpdate(state, world, pos, block, fromPos, notify);
+	}
+	
+	
 }

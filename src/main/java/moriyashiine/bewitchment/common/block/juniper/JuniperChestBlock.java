@@ -1,8 +1,8 @@
 package moriyashiine.bewitchment.common.block.juniper;
 
-import moriyashiine.bewitchment.common.block.entity.interfaces.TaglockHolder;
 import moriyashiine.bewitchment.common.block.BWChestBlock;
 import moriyashiine.bewitchment.common.block.entity.JuniperChestBlockEntity;
+import moriyashiine.bewitchment.common.block.entity.interfaces.TaglockHolder;
 import moriyashiine.bewitchment.common.registry.BWBlockEntityTypes;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
@@ -36,10 +36,7 @@ public class JuniperChestBlock extends BWChestBlock {
 	
 	@Override
 	public ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, Hand hand, BlockHitResult hit) {
-		ActionResult result = TaglockHolder.onUse(world, pos, player);
-		if (result != ActionResult.PASS) {
-			return result;
-		}
+		TaglockHolder.onUse(world, pos, player);
 		return super.onUse(state, world, pos, player, hand, hit);
 	}
 	

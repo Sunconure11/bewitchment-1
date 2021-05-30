@@ -1,6 +1,6 @@
 package moriyashiine.bewitchment.common.block;
 
-import moriyashiine.bewitchment.api.BewitchmentAPI;
+import moriyashiine.bewitchment.common.misc.BWUtil;
 import moriyashiine.bewitchment.common.misc.interfaces.EntityShapeContextAdditionAccessor;
 import moriyashiine.bewitchment.common.registry.BWObjects;
 import moriyashiine.bewitchment.common.registry.BWProperties;
@@ -44,7 +44,7 @@ public class BrambleBlock extends SugarCaneBlock {
 	@Override
 	public VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
 		if (this == BWObjects.THICK_BRAMBLE && context instanceof EntityShapeContextAdditionAccessor) {
-			Entity entity = ((EntityShapeContextAdditionAccessor) context).getEntity();
+			Entity entity = ((EntityShapeContextAdditionAccessor) context).bw_getEntity();
 			if (entity instanceof LivingEntity && !entity.isSneaking()) {
 				return VoxelShapes.fullCube();
 			}
@@ -85,8 +85,8 @@ public class BrambleBlock extends SugarCaneBlock {
 	public void onEntityCollision(BlockState state, World world, BlockPos pos, Entity entity) {
 		if (!world.isClient && entity instanceof LivingEntity) {
 			LivingEntity livingEntity = (LivingEntity) entity;
-			if (this == BWObjects.ENDER_BRAMBLE) {
-				BewitchmentAPI.attemptTeleport(livingEntity, entity.getBlockPos(), 64, true);
+			if (this == BWObjects.ENDER_BRAMBLE && !livingEntity.hasVehicle()) {
+				BWUtil.attemptTeleport(livingEntity, entity.getBlockPos(), 64, true);
 			}
 			if (this == BWObjects.SCORCHED_BRAMBLE) {
 				livingEntity.setOnFireFor(10);

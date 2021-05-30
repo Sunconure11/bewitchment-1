@@ -1,13 +1,17 @@
 package moriyashiine.bewitchment.common.entity.living;
 
 import moriyashiine.bewitchment.api.BewitchmentAPI;
-import moriyashiine.bewitchment.api.interfaces.entity.CurseAccessor;
-import moriyashiine.bewitchment.api.interfaces.entity.Pledgeable;
-import moriyashiine.bewitchment.common.Bewitchment;
+import moriyashiine.bewitchment.api.interfaces.entity.ContractAccessor;
+import moriyashiine.bewitchment.api.registry.Contract;
+import moriyashiine.bewitchment.client.network.packet.SyncContractsPacket;
+import moriyashiine.bewitchment.client.network.packet.SyncDemonTradesPacket;
+import moriyashiine.bewitchment.client.screen.DemonScreenHandler;
+import moriyashiine.bewitchment.common.entity.interfaces.DemonMerchant;
 import moriyashiine.bewitchment.common.entity.living.util.BWHostileEntity;
-import moriyashiine.bewitchment.common.registry.*;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
+import moriyashiine.bewitchment.common.misc.BWUtil;
+import moriyashiine.bewitchment.common.registry.BWMaterials;
+import moriyashiine.bewitchment.common.registry.BWRegistries;
+import moriyashiine.bewitchment.common.registry.BWSoundEvents;
 import net.fabricmc.fabric.api.util.NbtType;
 import net.minecraft.entity.*;
 import net.minecraft.entity.ai.goal.*;
@@ -18,43 +22,38 @@ import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.data.DataTracker;
 import net.minecraft.entity.data.TrackedData;
 import net.minecraft.entity.data.TrackedDataHandlerRegistry;
+import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.SmallFireballEntity;
-import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.item.ArmorItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.network.PacketByteBuf;
+import net.minecraft.screen.SimpleNamedScreenHandlerFactory;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
-import net.minecraft.util.math.Box;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
-import net.minecraft.village.Merchant;
-import net.minecraft.village.TradeOffer;
-import net.minecraft.village.TradeOfferList;
 import net.minecraft.world.LocalDifficulty;
 import net.minecraft.world.ServerWorldAccess;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Random;
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.stream.Collectors;
 
-@SuppressWarnings("ConstantConditions")
-public class DemonEntity extends BWHostileEntity implements Merchant {
-	public static final TradeOfferList EMPTY = new TradeOfferList();
-	
+public class DemonEntity extends BWHostileEntity implements DemonMerchant {
 	public static final TrackedData<Boolean> MALE = DataTracker.registerData(DemonEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
 	
-	private final SimpleInventory inventory = new SimpleInventory(6);
-	
-	private TradeOfferList tradeOffers = null;
+	private final List<DemonEntity.DemonTradeOffer> offers = new ArrayList<>();
 	private PlayerEntity customer = null;
-	
-	private int refreshTimer = 0;
+	private int tradeResetTimer = 0;
 	
 	public DemonEntity(EntityType<? extends HostileEntity> entityType, World world) {
 		super(entityType, world);
@@ -71,17 +70,10 @@ public class DemonEntity extends BWHostileEntity implements Merchant {
 	public void tick() {
 		super.tick();
 		if (!world.isClient) {
-			refreshTimer++;
-			if (refreshTimer >= 168000) {
-				if (Bewitchment.config.doDemonTradesRefresh) {
-					for (TradeOffer offer : getOffers()) {
-						offer.resetUses();
-					}
-				}
-				refreshTimer = 0;
-			}
-			if (customer != null) {
-				navigation.stop();
+			tradeResetTimer++;
+			if (tradeResetTimer >= 168000) {
+				tradeResetTimer = 0;
+				offers.clear();
 			}
 			LivingEntity target = getTarget();
 			if (target != null) {
@@ -129,27 +121,23 @@ public class DemonEntity extends BWHostileEntity implements Merchant {
 	}
 	
 	@Override
-	public SoundEvent getYesSound() {
-		return getAmbientSound();
-	}
-	
-	@Override
 	protected ActionResult interactMob(PlayerEntity player, Hand hand) {
-		if (isAlive()) {
-			TradeOfferList offers = getOffers();
-			if (rejectTrades(this)) {
-				offers = EMPTY;
+		if (!world.isClient && isAlive() && getTarget() == null) {
+			if (BWUtil.rejectTrades(this)) {
+				return ActionResult.FAIL;
 			}
-			if (!offers.isEmpty() && getCurrentCustomer() == null && getTarget() == null) {
-				boolean client = world.isClient;
-				if (!client) {
-					setCurrentCustomer(player);
-					sendOffers(player, getDisplayName(), 0);
-				}
-				return ActionResult.success(client);
+			if (getCurrentCustomer() == null) {
+				setCurrentCustomer(player);
+			}
+			if (!getOffers().isEmpty()) {
+				SyncContractsPacket.send(player);
+				player.openHandledScreen(new SimpleNamedScreenHandlerFactory((id, playerInventory, customer) -> new DemonScreenHandler(id, this), getDisplayName())).ifPresent(syncId -> SyncDemonTradesPacket.send(player, this, syncId));
+			}
+			else {
+				setCurrentCustomer(null);
 			}
 		}
-		return super.interactMob(player, hand);
+		return ActionResult.success(world.isClient);
 	}
 	
 	@Override
@@ -160,12 +148,6 @@ public class DemonEntity extends BWHostileEntity implements Merchant {
 	@Override
 	public boolean cannotDespawn() {
 		return true;
-	}
-	
-	@Override
-	public void onDeath(DamageSource source) {
-		super.onDeath(source);
-		setCurrentCustomer(null);
 	}
 	
 	@Override
@@ -180,67 +162,6 @@ public class DemonEntity extends BWHostileEntity implements Merchant {
 	}
 	
 	@Override
-	public void setTarget(@Nullable LivingEntity target) {
-		super.setTarget(target);
-		if (target != null) {
-			setCurrentCustomer(null);
-		}
-	}
-	
-	@Override
-	public World getMerchantWorld() {
-		return world;
-	}
-	
-	@Nullable
-	@Override
-	public PlayerEntity getCurrentCustomer() {
-		return customer;
-	}
-	
-	@Override
-	public void setCurrentCustomer(@Nullable PlayerEntity customer) {
-		this.customer = customer;
-	}
-	
-	@Override
-	public TradeOfferList getOffers() {
-		if (tradeOffers == null) {
-			tradeOffers = TradeGenerator.build(random);
-		}
-		return tradeOffers;
-	}
-	
-	@Override
-	public void trade(TradeOffer offer) {
-		offer.use();
-	}
-	
-	@Override
-	public void onSellingItem(ItemStack stack) {
-		world.playSound(null, getBlockPos(), getAmbientSound(), getSoundCategory(), getSoundVolume(), getSoundPitch());
-	}
-	
-	@Override
-	public boolean isLeveledMerchant() {
-		return false;
-	}
-	
-	@Override
-	public int getExperience() {
-		return 0;
-	}
-	
-	@Environment(EnvType.CLIENT)
-	@Override
-	public void setOffersFromServer(@Nullable TradeOfferList offers) {
-	}
-	
-	@Override
-	public void setExperienceFromServer(int experience) {
-	}
-	
-	@Override
 	public EntityData initialize(ServerWorldAccess world, LocalDifficulty difficulty, SpawnReason spawnReason, @Nullable EntityData entityData, @Nullable CompoundTag entityTag) {
 		dataTracker.set(MALE, random.nextBoolean());
 		return super.initialize(world, difficulty, spawnReason, entityData, entityTag);
@@ -250,186 +171,176 @@ public class DemonEntity extends BWHostileEntity implements Merchant {
 	public void readCustomDataFromTag(CompoundTag tag) {
 		super.readCustomDataFromTag(tag);
 		dataTracker.set(MALE, tag.getBoolean("Male"));
-		inventory.readTags(tag.getList("Inventory", NbtType.COMPOUND));
 		if (tag.contains("Offers")) {
-			tradeOffers = new TradeOfferList(tag.getCompound("Offers"));
+			offers.clear();
+			ListTag offersTag = tag.getList("Offers", NbtType.COMPOUND);
+			for (Tag offerTag : offersTag) {
+				offers.add(new DemonTradeOffer((CompoundTag) offerTag));
+			}
 		}
-		refreshTimer = tag.getInt("RefreshTimer");
+		tradeResetTimer = tag.getInt("TradeResetTimer");
 	}
 	
 	@Override
 	public void writeCustomDataToTag(CompoundTag tag) {
 		super.writeCustomDataToTag(tag);
 		tag.putBoolean("Male", dataTracker.get(MALE));
-		tag.put("Inventory", inventory.getTags());
-		if (!getOffers().isEmpty()) {
-			tag.put("Offers", tradeOffers.toTag());
+		if (!offers.isEmpty()) {
+			ListTag offersTag = new ListTag();
+			for (DemonTradeOffer offer : offers) {
+				offersTag.add(offer.toTag());
+			}
+			tag.put("Offers", offersTag);
 		}
-		tag.putInt("RefreshTimer", refreshTimer);
+		tag.putInt("TradeResetTimer", tradeResetTimer);
 	}
 	
 	@Override
 	protected void initDataTracker() {
 		super.initDataTracker();
-		dataTracker.startTracking(MALE, false);
+		dataTracker.startTracking(MALE, true);
 	}
 	
 	@Override
 	protected void initGoals() {
 		goalSelector.add(0, new SwimGoal(this));
-		goalSelector.add(1, new MeleeAttackGoal(this, 1, true));
-		goalSelector.add(2, new WanderAroundFarGoal(this, 1));
-		goalSelector.add(3, new LookAtEntityGoal(this, PlayerEntity.class, 8));
-		goalSelector.add(3, new LookAroundGoal(this));
+		goalSelector.add(1, new LookAtCustomerGoal<>(this));
+		goalSelector.add(2, new MeleeAttackGoal(this, 1, true));
+		goalSelector.add(3, new WanderAroundFarGoal(this, 1));
+		goalSelector.add(4, new LookAtEntityGoal(this, PlayerEntity.class, 8));
+		goalSelector.add(5, new LookAroundGoal(this));
 		targetSelector.add(0, new RevengeGoal(this));
-		targetSelector.add(1, new FollowTargetGoal<>(this, LivingEntity.class, 10, true, false, entity -> !(entity instanceof Pledgeable) && BewitchmentAPI.getArmorPieces(entity, stack -> stack.getItem() instanceof ArmorItem && ((ArmorItem) stack.getItem()).getMaterial() == BWMaterials.BESMIRCHED_ARMOR) < 3));
+		targetSelector.add(1, new FollowTargetGoal<>(this, LivingEntity.class, 10, true, false, entity -> !(entity instanceof ArmorStandEntity) && BWUtil.getArmorPieces(entity, stack -> stack.getItem() instanceof ArmorItem && ((ArmorItem) stack.getItem()).getMaterial() == BWMaterials.BESMIRCHED_ARMOR) < 3 && (entity.getGroup() != BewitchmentAPI.DEMON || entity instanceof PlayerEntity)));
 	}
 	
-	public static boolean rejectTrades(LivingEntity merchant) {
-		return !merchant.world.getEntitiesByClass(LivingEntity.class, new Box(merchant.getBlockPos()).expand(8), entity -> merchant.canSee(entity) && entity.isAlive() && ((CurseAccessor) entity).hasCurse(BWCurses.APATHY)).isEmpty();
+	@Override
+	public void onDeath(DamageSource source) {
+		super.onDeath(source);
+		setCurrentCustomer(null);
+	}
+	
+	@Override
+	public void setTarget(@Nullable LivingEntity target) {
+		super.setTarget(target);
+		if (target != null) {
+			setCurrentCustomer(null);
+		}
+	}
+	
+	@Override
+	public List<DemonEntity.DemonTradeOffer> getOffers() {
+		if (offers.isEmpty()) {
+			List<Contract> availableContracts = BWRegistries.CONTRACTS.stream().collect(Collectors.toList());
+			for (int i = 0; i < 3; i++) {
+				Contract contract = availableContracts.get(random.nextInt(availableContracts.size()));
+				offers.add(new DemonTradeOffer(contract, 168000, MathHelper.nextInt(random, 3, 6)));
+				availableContracts.remove(contract);
+			}
+		}
+		return offers;
+	}
+	
+	@Override
+	public LivingEntity getDemonTrader() {
+		return this;
+	}
+	
+	@Override
+	public void onSell(DemonEntity.DemonTradeOffer offer) {
+		if (!world.isClient) {
+			world.playSound(null, getBlockPos(), BWSoundEvents.ITEM_CONTRACT_USE, getSoundCategory(), getSoundVolume(), getSoundPitch());
+			world.playSound(null, getBlockPos(), getAmbientSound(), getSoundCategory(), getSoundVolume(), getSoundPitch());
+		}
+	}
+	
+	@Override
+	public void setCurrentCustomer(PlayerEntity customer) {
+		this.customer = customer;
+	}
+	
+	@Override
+	public @Nullable PlayerEntity getCurrentCustomer() {
+		return customer;
 	}
 	
 	@SuppressWarnings("ConstantConditions")
-	private static class TradeGenerator {
-		public static TradeOfferList build(Random random) {
-			TradeOfferList offers = new TradeOfferList();
-			for (int i = 0; i < 5; i++) {
-				offers.add(generateOffer(random));
+	public static class DemonTradeOffer {
+		private final Contract contract;
+		private final int duration, cost;
+		
+		public DemonTradeOffer(CompoundTag tag) {
+			this(BWRegistries.CONTRACTS.get(new Identifier(tag.getString("Contract"))), tag.getInt("Duration"), tag.getInt("Cost"));
+		}
+		
+		public DemonTradeOffer(Contract contract, int duration, int cost) {
+			this.contract = contract;
+			this.duration = duration;
+			this.cost = cost;
+		}
+		
+		public CompoundTag toTag() {
+			CompoundTag tag = new CompoundTag();
+			tag.putString("Contract", BWRegistries.CONTRACTS.getId(contract).toString());
+			tag.putInt("Duration", duration);
+			tag.putInt("Cost", cost);
+			return tag;
+		}
+		
+		public static void toPacket(List<DemonTradeOffer> offers, PacketByteBuf buf) {
+			buf.writeInt(offers.size());
+			for (DemonTradeOffer offer : offers) {
+				buf.writeIdentifier(BWRegistries.CONTRACTS.getId(offer.getContract()));
+				buf.writeInt(offer.duration);
+				buf.writeInt(offer.cost);
 			}
-			offers.add(generateContractOffer(random));
+		}
+		
+		public static List<DemonTradeOffer> fromPacket(PacketByteBuf buf) {
+			int count = buf.readInt();
+			List<DemonTradeOffer> offers = new ArrayList<>(count);
+			for (int i = 0; i < count; i++) {
+				offers.add(new DemonTradeOffer(BWRegistries.CONTRACTS.get(buf.readIdentifier()), buf.readInt(), buf.readInt()));
+			}
 			return offers;
 		}
 		
-		private static TradeOffer generateOffer(Random random) {
-			switch (random.nextInt(9)) {
-				case 0:
-					switch (random.nextInt(5)) {
-						case 0:
-							return new TradeOffer(new ItemStack(Items.GOLD_INGOT, MathHelper.nextInt(random, 15, 21)), new ItemStack(Items.GHAST_TEAR, MathHelper.nextInt(random, 1, 2)), 3, 0, 1);
-						case 1:
-							return new TradeOffer(new ItemStack(Items.GOLD_INGOT, MathHelper.nextInt(random, 16, 24)), new ItemStack(Items.NETHERITE_SCRAP, MathHelper.nextInt(random, 1, 2)), 3, 0, 1);
-						case 2:
-							return new TradeOffer(new ItemStack(Items.GOLD_INGOT, MathHelper.nextInt(random, 12, 18)), new ItemStack(Items.SKELETON_SKULL), 3, 0, 1);
-						case 3:
-							return new TradeOffer(new ItemStack(Items.GOLD_INGOT, MathHelper.nextInt(random, 15, 20)), new ItemStack(Items.WITHER_SKELETON_SKULL), 3, 0, 1);
-						case 4:
-							return new TradeOffer(new ItemStack(Items.GOLD_INGOT, MathHelper.nextInt(random, 8, 12)), new ItemStack(Items.GILDED_BLACKSTONE, MathHelper.nextInt(random, 10, 32)), 3, 0, 1);
-					}
-				case 1:
-					switch (random.nextInt(4)) {
-						case 0:
-							return new TradeOffer(new ItemStack(Items.DIAMOND, MathHelper.nextInt(random, 3, 8)), new ItemStack(Items.GHAST_TEAR, MathHelper.nextInt(random, 1, 3)), 3, 0, 1);
-						case 1:
-							return new TradeOffer(new ItemStack(Items.DIAMOND, MathHelper.nextInt(random, 6, 10)), new ItemStack(Items.NETHERITE_SCRAP, 2), 3, 0, 1);
-						case 2:
-							return new TradeOffer(new ItemStack(Items.DIAMOND, MathHelper.nextInt(random, 1, 2)), new ItemStack(Items.SKELETON_SKULL, MathHelper.nextInt(random, 1, 2)), 3, 0, 1);
-						case 3:
-							return new TradeOffer(new ItemStack(Items.DIAMOND, MathHelper.nextInt(random, 4, 6)), new ItemStack(Items.WITHER_SKELETON_SKULL), 3, 0, 1);
-					}
-				case 2:
-					switch (random.nextInt(4)) {
-						case 0:
-							return new TradeOffer(new ItemStack(Items.BLAZE_ROD, MathHelper.nextInt(random, 12, 24)), new ItemStack(Items.GHAST_TEAR, MathHelper.nextInt(random, 1, 3)), 3, 0, 1);
-						case 1:
-							return new TradeOffer(new ItemStack(Items.BLAZE_ROD, MathHelper.nextInt(random, 16, 28)), new ItemStack(Items.NETHERITE_SCRAP, MathHelper.nextInt(random, 1, 2)), 3, 0, 1);
-						case 2:
-							return new TradeOffer(new ItemStack(Items.BLAZE_ROD, MathHelper.nextInt(random, 10, 15)), new ItemStack(Items.SKELETON_SKULL), 3, 0, 1);
-						case 3:
-							return new TradeOffer(new ItemStack(Items.BLAZE_ROD, MathHelper.nextInt(random, 20, 28)), new ItemStack(Items.WITHER_SKELETON_SKULL), 3, 0, 1);
-					}
-				case 3:
-					switch (random.nextInt(4)) {
-						case 0:
-							return new TradeOffer(new ItemStack(Items.FERMENTED_SPIDER_EYE, MathHelper.nextInt(random, 10, 18)), new ItemStack(Items.GHAST_TEAR), 3, 0, 1);
-						case 1:
-							return new TradeOffer(new ItemStack(Items.FERMENTED_SPIDER_EYE, MathHelper.nextInt(random, 4, 8)), new ItemStack(Items.WARPED_FUNGUS, MathHelper.nextInt(random, 2, 6)), 3, 0, 1);
-						case 2:
-							return new TradeOffer(new ItemStack(Items.FERMENTED_SPIDER_EYE, MathHelper.nextInt(random, 6, 12)), new ItemStack(Items.SKELETON_SKULL), 3, 0, 1);
-						case 3:
-							return new TradeOffer(new ItemStack(Items.FERMENTED_SPIDER_EYE, MathHelper.nextInt(random, 10, 20)), new ItemStack(Items.GILDED_BLACKSTONE, MathHelper.nextInt(random, 10, 25)), 3, 0, 1);
-					}
-				case 4:
-					switch (random.nextInt(3)) {
-						case 0:
-							return new TradeOffer(new ItemStack(getRandomHead(random), MathHelper.nextInt(random, 3, 6)), new ItemStack(Items.GHAST_TEAR, MathHelper.nextInt(random, 1, 2)), 3, 0, 1);
-						case 1:
-							return new TradeOffer(new ItemStack(getRandomHead(random), MathHelper.nextInt(random, 12, 16)), new ItemStack(Items.NETHERITE_SCRAP), 3, 0, 1);
-						case 2:
-							return new TradeOffer(new ItemStack(getRandomHead(random), MathHelper.nextInt(random, 3, 6)), new ItemStack(Items.GILDED_BLACKSTONE, MathHelper.nextInt(random, 10, 35)), 3, 0, 1);
-					}
-				case 5:
-					switch (random.nextInt(3)) {
-						case 0:
-							return new TradeOffer(new ItemStack(Items.WITHER_SKELETON_SKULL, 2), new ItemStack(Items.GHAST_TEAR, MathHelper.nextInt(random, 2, 3)), 3, 0, 1);
-						case 1:
-							return new TradeOffer(new ItemStack(Items.WITHER_SKELETON_SKULL, MathHelper.nextInt(random, 1, 3)), new ItemStack(Items.NETHERITE_SCRAP, MathHelper.nextInt(random, 1, 2)), 3, 0, 1);
-						case 2:
-							return new TradeOffer(new ItemStack(Items.WITHER_SKELETON_SKULL), new ItemStack(Items.GILDED_BLACKSTONE, MathHelper.nextInt(random, 30, 45)), 3, 0, 1);
-					}
-				case 6:
-					switch (random.nextInt(4)) {
-						case 0:
-							return new TradeOffer(new ItemStack(BWObjects.BESMIRCHED_WOOL, MathHelper.nextInt(random, 8, 12)), new ItemStack(Items.GHAST_TEAR), 3, 0, 1);
-						case 1:
-							return new TradeOffer(new ItemStack(BWObjects.BESMIRCHED_WOOL, MathHelper.nextInt(random, 4, 10)), new ItemStack(Items.WARPED_FUNGUS, MathHelper.nextInt(random, 4, 8)), 3, 0, 1);
-						case 2:
-							return new TradeOffer(new ItemStack(BWObjects.BESMIRCHED_WOOL, MathHelper.nextInt(random, 4, 6)), new ItemStack(Items.SKELETON_SKULL), 3, 0, 1);
-						case 3:
-							return new TradeOffer(new ItemStack(BWObjects.BESMIRCHED_WOOL, MathHelper.nextInt(random, 4, 10)), new ItemStack(Items.GILDED_BLACKSTONE, MathHelper.nextInt(random, 10, 25)), 3, 0, 1);
-					}
-				case 7:
-					switch (random.nextInt(4)) {
-						case 0:
-							return new TradeOffer(new ItemStack(BWObjects.SNAKE_TONGUE, MathHelper.nextInt(random, 6, 10)), new ItemStack(Items.GHAST_TEAR, MathHelper.nextInt(random, 1, 2)), 3, 0, 1);
-						case 1:
-							return new TradeOffer(new ItemStack(BWObjects.SNAKE_TONGUE, MathHelper.nextInt(random, 14, 25)), new ItemStack(Items.NETHERITE_SCRAP), 3, 0, 1);
-						case 2:
-							return new TradeOffer(new ItemStack(BWObjects.SNAKE_TONGUE, MathHelper.nextInt(random, 16, 24)), new ItemStack(Items.WITHER_SKELETON_SKULL), 3, 0, 1);
-						case 3:
-							return new TradeOffer(new ItemStack(BWObjects.SNAKE_TONGUE, MathHelper.nextInt(random, 8, 12)), new ItemStack(Items.GILDED_BLACKSTONE, MathHelper.nextInt(random, 10, 25)), 3, 0, 1);
-					}
-				case 8:
-					switch (random.nextInt(5)) {
-						case 0:
-							return new TradeOffer(new ItemStack(BWObjects.DEMON_HORN, MathHelper.nextInt(random, 6, 14)), new ItemStack(Items.GHAST_TEAR, MathHelper.nextInt(random, 1, 2)), 3, 0, 1);
-						case 1:
-							return new TradeOffer(new ItemStack(BWObjects.DEMON_HORN, MathHelper.nextInt(random, 12, 16)), new ItemStack(Items.NETHERITE_SCRAP), 3, 0, 1);
-						case 2:
-							return new TradeOffer(new ItemStack(BWObjects.DEMON_HORN, MathHelper.nextInt(random, 6, 12)), new ItemStack(Items.SKELETON_SKULL), 3, 0, 1);
-						case 3:
-							return new TradeOffer(new ItemStack(BWObjects.DEMON_HORN, MathHelper.nextInt(random, 12, 18)), new ItemStack(Items.WITHER_SKELETON_SKULL), 3, 0, 1);
-						case 4:
-							return new TradeOffer(new ItemStack(BWObjects.DEMON_HORN, MathHelper.nextInt(random, 6, 10)), new ItemStack(Items.GILDED_BLACKSTONE, MathHelper.nextInt(random, 15, 35)), 3, 0, 1);
-					}
+		public void apply(DemonMerchant merchant) {
+			if (merchant.getCurrentCustomer() != null) {
+				PlayerEntity customer = merchant.getCurrentCustomer();
+				((ContractAccessor) customer).addContract(new Contract.Instance(contract, getDuration(), getCost(merchant)));
 			}
-			return null;
 		}
 		
-		private static TradeOffer generateContractOffer(Random random) {
-			ItemStack stack = new ItemStack(BWObjects.DEMONIC_CONTRACT);
-			stack.getOrCreateTag().putString("Contract", BWRegistries.CONTRACTS.getId(BWRegistries.CONTRACTS.get(random.nextInt(BWRegistries.CONTRACTS.getEntries().size()))).toString());
-			switch (random.nextInt(7)) {
-				case 0:
-					return new TradeOffer(new ItemStack(Items.GOLD_INGOT, MathHelper.nextInt(random, 24, 32)), new ItemStack(BWObjects.BOTTLE_OF_BLOOD, MathHelper.nextInt(random, 6, 12)), stack, 1, 0, 1);
-				case 1:
-					return new TradeOffer(new ItemStack(Items.DIAMOND, MathHelper.nextInt(random, 8, 14)), new ItemStack(BWObjects.BOTTLE_OF_BLOOD, MathHelper.nextInt(random, 4, 10)), stack, 1, 0, 1);
-				case 2:
-					return new TradeOffer(new ItemStack(Items.BLAZE_ROD, MathHelper.nextInt(random, 32, 42)), new ItemStack(BWObjects.BOTTLE_OF_BLOOD, MathHelper.nextInt(random, 6, 8)), stack, 1, 0, 1);
-				case 3:
-					return new TradeOffer(new ItemStack(getRandomHead(random), MathHelper.nextInt(random, 10, 20)), new ItemStack(BWObjects.BOTTLE_OF_BLOOD, MathHelper.nextInt(random, 12, 15)), stack, 1, 0, 1);
-				case 4:
-					return new TradeOffer(new ItemStack(Items.WITHER_SKELETON_SKULL, MathHelper.nextInt(random, 3, 4)), new ItemStack(BWObjects.BOTTLE_OF_BLOOD, MathHelper.nextInt(random, 5, 12)), stack, 1, 0, 1);
-				case 5:
-					return new TradeOffer(new ItemStack(BWObjects.SNAKE_TONGUE, MathHelper.nextInt(random, 20, 32)), new ItemStack(BWObjects.BOTTLE_OF_BLOOD, MathHelper.nextInt(random, 8, 12)), stack, 1, 0, 1);
-				case 6:
-					return new TradeOffer(new ItemStack(BWObjects.DEMON_HORN, MathHelper.nextInt(random, 20, 32)), new ItemStack(BWObjects.BOTTLE_OF_BLOOD, MathHelper.nextInt(random, 4, 8)), stack, 1, 0, 1);
-			}
-			return null;
+		public Contract getContract() {
+			return contract;
 		}
 		
-		private static Item getRandomHead(Random random) {
-			int value = random.nextInt(3);
-			return value == 0 ? Items.ZOMBIE_HEAD : value == 1 ? Items.CREEPER_HEAD : Items.SKELETON_SKULL;
+		public int getDuration() {
+			return duration;
+		}
+		
+		public int getCost(DemonMerchant merchant) {
+			return merchant.isDiscount() ? 1 : cost;
+		}
+	}
+	
+	public static class LookAtCustomerGoal<T extends MobEntity & DemonMerchant> extends LookAtEntityGoal {
+		private final T merchant;
+		
+		public LookAtCustomerGoal(T merchant) {
+			super(merchant, PlayerEntity.class, 8);
+			this.merchant = merchant;
+			setControls(EnumSet.of(Control.MOVE, Control.LOOK));
+		}
+		
+		public boolean canStart() {
+			if (this.merchant.getCurrentCustomer() != null) {
+				this.target = this.merchant.getCurrentCustomer();
+				return true;
+			}
+			else {
+				return false;
+			}
 		}
 	}
 }

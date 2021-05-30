@@ -1,0 +1,32 @@
+{
+  "parent": "recipes/root",
+  "rewards": {
+	"recipes": [
+	  "bewitchment:druid_band"
+	]
+  },
+  "criteria": {
+	"has_item": {
+	  "trigger": "inventory_changed",
+	  "conditions": {
+		"items": [
+		  {
+			"item": "bewitchment:earth_ichor"
+		  }
+		]
+	  }
+	},
+	"has_the_recipe": {
+	  "trigger": "recipe_unlocked",
+	  "conditions": {
+		"recipe": "bewitchment:druid_band"
+	  }
+	}
+  },
+  "requirements": [
+	[
+	  "has_item",
+	  "has_the_recipe"
+	]
+  ]
+}

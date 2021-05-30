@@ -3,10 +3,15 @@ package moriyashiine.bewitchment.common.entity.living;
 import com.google.common.collect.Sets;
 import moriyashiine.bewitchment.api.BewitchmentAPI;
 import moriyashiine.bewitchment.api.interfaces.entity.Pledgeable;
+import moriyashiine.bewitchment.api.interfaces.entity.TransformationAccessor;
+import moriyashiine.bewitchment.client.network.packet.SpawnSmokeParticlesPacket;
 import moriyashiine.bewitchment.common.entity.living.util.BWHostileEntity;
 import moriyashiine.bewitchment.common.item.HornedSpearItem;
+import moriyashiine.bewitchment.common.misc.BWUtil;
+import moriyashiine.bewitchment.common.network.packet.TransformationAbilityPacket;
 import moriyashiine.bewitchment.common.registry.*;
 import moriyashiine.bewitchment.mixin.StatusEffectAccessor;
+import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.minecraft.block.BlockState;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityGroup;
@@ -25,22 +30,26 @@ import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ArmorItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.text.Text;
+import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 public class HerneEntity extends BWHostileEntity implements Pledgeable {
 	private final ServerBossBar bossBar;
+	
+	private final Set<UUID> pledgedPlayerUUIDS = new HashSet<>();
 	private int timeSinceLastAttack = 0;
 	
 	public HerneEntity(EntityType<? extends HostileEntity> entityType, World world) {
@@ -68,7 +77,7 @@ public class HerneEntity extends BWHostileEntity implements Pledgeable {
 			if (target != null) {
 				timeSinceLastAttack++;
 				if (timeSinceLastAttack >= 600) {
-					BewitchmentAPI.teleport(this, target.getX(), target.getY(), target.getZ(), true);
+					BWUtil.teleport(this, target.getX(), target.getY(), target.getZ(), true);
 					timeSinceLastAttack = 0;
 				}
 				lookAtEntity(target, 360, 360);
@@ -90,8 +99,13 @@ public class HerneEntity extends BWHostileEntity implements Pledgeable {
 	}
 	
 	@Override
-	public UUID getPledgeUUID() {
-		return BWPledges.HERNE_UUID;
+	public String getPledgeID() {
+		return BWPledges.HERNE;
+	}
+	
+	@Override
+	public Collection<UUID> getPledgedPlayerUUIDs() {
+		return pledgedPlayerUUIDS;
 	}
 	
 	@Override
@@ -102,6 +116,11 @@ public class HerneEntity extends BWHostileEntity implements Pledgeable {
 	@Override
 	public Collection<StatusEffectInstance> getMinionBuffs() {
 		return Sets.newHashSet(new StatusEffectInstance(StatusEffects.STRENGTH, Integer.MAX_VALUE, 1), new StatusEffectInstance(StatusEffects.RESISTANCE, Integer.MAX_VALUE, 1), new StatusEffectInstance(BWStatusEffects.HARDENING, Integer.MAX_VALUE, 1));
+	}
+	
+	@Override
+	public int getTimeSinceLastAttack() {
+		return timeSinceLastAttack;
 	}
 	
 	@Override
@@ -138,6 +157,32 @@ public class HerneEntity extends BWHostileEntity implements Pledgeable {
 	@Override
 	protected SoundEvent getDeathSound() {
 		return BWSoundEvents.ENTITY_HERNE_DEATH;
+	}
+	
+	@Override
+	protected ActionResult interactMob(PlayerEntity player, Hand hand) {
+		if (isAlive() && getTarget() == null && BewitchmentAPI.isWerewolf(player, true)) {
+			ItemStack stack = player.getStackInHand(hand);
+			if (stack.getItem() == BWObjects.ACONITE) {
+				boolean client = world.isClient;
+				if (!client) {
+					if (!player.isCreative()) {
+						stack.decrement(1);
+					}
+					PlayerLookup.tracking(player).forEach(foundPlayer -> SpawnSmokeParticlesPacket.send(foundPlayer, player));
+					SpawnSmokeParticlesPacket.send(player, player);
+					world.playSound(null, getBlockPos(), BWSoundEvents.ENTITY_GENERIC_PLING, player.getSoundCategory(), 1, 1);
+					if (((TransformationAccessor) player).getAlternateForm()) {
+						TransformationAbilityPacket.useAbility(player, true);
+					}
+					((TransformationAccessor) player).getTransformation().onRemoved(player);
+					((TransformationAccessor) player).setTransformation(BWTransformations.HUMAN);
+					((TransformationAccessor) player).getTransformation().onAdded(player);
+				}
+				return ActionResult.success(client);
+			}
+		}
+		return super.interactMob(player, hand);
 	}
 	
 	@Override
@@ -213,13 +258,13 @@ public class HerneEntity extends BWHostileEntity implements Pledgeable {
 		if (hasCustomName()) {
 			bossBar.setName(getDisplayName());
 		}
-		timeSinceLastAttack = tag.getInt("TimeSinceLastAttack");
+		fromTagPledgeable(tag);
 	}
 	
 	@Override
 	public void writeCustomDataToTag(CompoundTag tag) {
 		super.writeCustomDataToTag(tag);
-		tag.putInt("TimeSinceLastAttack", timeSinceLastAttack);
+		toTagPledgeable(tag);
 	}
 	
 	@Override
@@ -230,6 +275,6 @@ public class HerneEntity extends BWHostileEntity implements Pledgeable {
 		goalSelector.add(3, new LookAtEntityGoal(this, PlayerEntity.class, 8));
 		goalSelector.add(3, new LookAroundGoal(this));
 		targetSelector.add(0, new RevengeGoal(this));
-		targetSelector.add(1, new FollowTargetGoal<>(this, LivingEntity.class, 10, true, false, entity -> entity.getGroup() != BewitchmentAPI.DEMON && BewitchmentAPI.getArmorPieces(entity, stack -> stack.getItem() instanceof ArmorItem && ((ArmorItem) stack.getItem()).getMaterial() == BWMaterials.BESMIRCHED_ARMOR) < 3 && !(entity instanceof PlayerEntity && BewitchmentAPI.isPledged(world, getPledgeUUID(), entity.getUuid()))));
+		targetSelector.add(1, BWUtil.createGenericPledgeableTargetGoal(this));
 	}
 }

@@ -1,55 +1,73 @@
 package moriyashiine.bewitchment.common.entity.living;
 
+import com.jamieswhiteshirt.reachentityattributes.ReachEntityAttributes;
+import dev.emi.stepheightentityattribute.StepHeightEntityAttributeMain;
 import moriyashiine.bewitchment.api.BewitchmentAPI;
-import moriyashiine.bewitchment.common.entity.interfaces.DespawnAccessor;
+import moriyashiine.bewitchment.api.interfaces.entity.CurseAccessor;
 import moriyashiine.bewitchment.client.network.packet.SpawnSmokeParticlesPacket;
+import moriyashiine.bewitchment.common.entity.interfaces.VillagerWerewolfAccessor;
 import moriyashiine.bewitchment.common.entity.living.util.BWHostileEntity;
+import moriyashiine.bewitchment.common.misc.BWUtil;
 import moriyashiine.bewitchment.common.registry.BWSoundEvents;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
-import net.minecraft.entity.EntityData;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.SpawnReason;
+import net.minecraft.entity.*;
 import net.minecraft.entity.ai.goal.*;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
 import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.entity.passive.MerchantEntity;
+import net.minecraft.entity.passive.SheepEntity;
 import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.sound.SoundEvent;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.*;
+import net.minecraft.world.LocalDifficulty;
+import net.minecraft.world.ServerWorldAccess;
+import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Random;
-
+@SuppressWarnings("ConstantConditions")
 public class WerewolfEntity extends BWHostileEntity {
-	private boolean despawns = false;
+	public CompoundTag storedVillager;
 	
 	public WerewolfEntity(EntityType<? extends HostileEntity> entityType, World world) {
 		super(entityType, world);
 	}
 	
 	public static DefaultAttributeContainer.Builder createAttributes() {
-		return MobEntity.createMobAttributes().add(EntityAttributes.GENERIC_MAX_HEALTH, 20).add(EntityAttributes.GENERIC_ATTACK_DAMAGE, 6).add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.4);
+		return MobEntity.createMobAttributes().add(EntityAttributes.GENERIC_MAX_HEALTH, 20).add(EntityAttributes.GENERIC_ATTACK_DAMAGE, 5).add(EntityAttributes.GENERIC_ARMOR, 20).add(EntityAttributes.GENERIC_ARMOR_TOUGHNESS, 10).add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.4).add(ReachEntityAttributes.ATTACK_RANGE, 1).add(StepHeightEntityAttributeMain.STEP_HEIGHT, 1);
 	}
 	
 	@Override
 	public void tick() {
 		super.tick();
-		if (!world.isClient && despawns && age % 20 == 0 && BewitchmentAPI.getMoonPhase(world) != 0) {
-			VillagerEntity entity = EntityType.VILLAGER.create(world);
-			if (entity instanceof DespawnAccessor) {
-				PlayerLookup.tracking(this).forEach(player -> SpawnSmokeParticlesPacket.send(player, this));
-				entity.updatePositionAndAngles(getX(), getY(), getZ(), random.nextFloat() * 360, 0);
-				entity.setHealth(entity.getMaxHealth() * (getHealth() / getMaxHealth()));
-				entity.setFireTicks(getFireTicks());
-				getStatusEffects().forEach(entity::addStatusEffect);
-				((DespawnAccessor) entity).setDespawnTimer(1200);
-				world.spawnEntity(entity);
-				remove();
+		if (!world.isClient) {
+			getArmorItems().forEach(stack -> dropStack(stack.split(1)));
+			if (BWUtil.isTool(getMainHandStack())) {
+				dropStack(getMainHandStack().split(1));
+			}
+			if (BWUtil.isTool(getOffHandStack())) {
+				dropStack(getOffHandStack().split(1));
+			}
+			if (storedVillager != null && age % 20 == 0 && (world.isDay() || BewitchmentAPI.getMoonPhase(world) != 0)) {
+				VillagerEntity entity = EntityType.VILLAGER.create(world);
+				if (entity instanceof VillagerWerewolfAccessor) {
+					PlayerLookup.tracking(this).forEach(player -> SpawnSmokeParticlesPacket.send(player, this));
+					world.playSound(null, getX(), getY(), getZ(), BWSoundEvents.ENTITY_GENERIC_TRANSFORM, getSoundCategory(), getSoundVolume(), getSoundPitch());
+					entity.fromTag(storedVillager);
+					entity.updatePositionAndAngles(getX(), getY(), getZ(), random.nextFloat() * 360, 0);
+					entity.setHealth(entity.getMaxHealth() * (getHealth() / getMaxHealth()));
+					entity.setFireTicks(getFireTicks());
+					entity.clearStatusEffects();
+					getStatusEffects().forEach(entity::addStatusEffect);
+					((CurseAccessor) entity).getCurses().clear();
+					((CurseAccessor) this).getCurses().forEach(((CurseAccessor) entity)::addCurse);
+					((VillagerWerewolfAccessor) entity).setStoredWerewolf(toTag(new CompoundTag()));
+					world.spawnEntity(entity);
+					remove();
+				}
 			}
 		}
 	}
@@ -61,7 +79,12 @@ public class WerewolfEntity extends BWHostileEntity {
 	
 	@Override
 	public int getVariants() {
-		return 7;
+		return getVariantsStatic();
+	}
+	
+	@Override
+	public EntityGroup getGroup() {
+		return BewitchmentAPI.DEMON;
 	}
 	
 	@Nullable
@@ -78,14 +101,6 @@ public class WerewolfEntity extends BWHostileEntity {
 	@Override
 	protected SoundEvent getDeathSound() {
 		return BWSoundEvents.ENTITY_WEREWOLF_DEATH;
-	}
-	
-	@Override
-	public boolean damage(DamageSource source, float amount) {
-		if (!world.isClient && !VampireEntity.isEffective(source, false)) {
-			amount /= 6;
-		}
-		return super.damage(source, amount);
 	}
 	
 	@Override
@@ -107,20 +122,26 @@ public class WerewolfEntity extends BWHostileEntity {
 					break;
 			}
 		}
-		despawns = spawnReason == SpawnReason.NATURAL;
+		if (spawnReason == SpawnReason.NATURAL) {
+			storedVillager = EntityType.VILLAGER.create((World) world).toTag(new CompoundTag());
+		}
 		return data;
 	}
 	
 	@Override
 	public void readCustomDataFromTag(CompoundTag tag) {
 		super.readCustomDataFromTag(tag);
-		despawns = tag.getBoolean("Despawns");
+		if (tag.contains("StoredVillager")) {
+			storedVillager = tag.getCompound("StoredVillager");
+		}
 	}
 	
 	@Override
 	public void writeCustomDataToTag(CompoundTag tag) {
 		super.writeCustomDataToTag(tag);
-		tag.putBoolean("Despawns", despawns);
+		if (storedVillager != null) {
+			tag.put("StoredVillager", storedVillager);
+		}
 	}
 	
 	@Override
@@ -131,10 +152,10 @@ public class WerewolfEntity extends BWHostileEntity {
 		goalSelector.add(3, new LookAtEntityGoal(this, PlayerEntity.class, 8));
 		goalSelector.add(3, new LookAroundGoal(this));
 		targetSelector.add(0, new RevengeGoal(this));
-		targetSelector.add(1, new FollowTargetGoal<>(this, PlayerEntity.class, true));
+		targetSelector.add(1, new FollowTargetGoal<>(this, LivingEntity.class, 10, true, false, entity -> entity instanceof PlayerEntity || entity instanceof SheepEntity || entity instanceof MerchantEntity || entity.getGroup() == EntityGroup.ILLAGER));
 	}
 	
-	public static boolean canSpawn(EntityType<WerewolfEntity> type, WorldAccess world, SpawnReason spawnReason, BlockPos pos, Random random) {
-		return world.getDifficulty() != Difficulty.PEACEFUL && world.getLevelProperties().getTime() > 24000 && BewitchmentAPI.getMoonPhase(world) == 0;
+	public static int getVariantsStatic() {
+		return 7;
 	}
 }

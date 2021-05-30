@@ -5,6 +5,7 @@ import moriyashiine.bewitchment.client.network.packet.SpawnSmokeParticlesPacket;
 import moriyashiine.bewitchment.common.block.entity.WitchAltarBlockEntity;
 import moriyashiine.bewitchment.common.entity.living.util.BWHostileEntity;
 import moriyashiine.bewitchment.common.registry.BWSoundEvents;
+import moriyashiine.bewitchment.common.registry.BWStatusEffects;
 import moriyashiine.bewitchment.common.world.BWWorldState;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.minecraft.block.Block;
@@ -14,6 +15,7 @@ import net.minecraft.command.argument.EntityAnchorArgumentType;
 import net.minecraft.entity.EntityGroup;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.ai.control.MoveControl;
 import net.minecraft.entity.ai.goal.*;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
@@ -29,13 +31,16 @@ import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.state.property.Properties;
+import net.minecraft.util.Pair;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.ServerWorldAccess;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumSet;
+import java.util.Random;
 
 public class GhostEntity extends BWHostileEntity {
 	public static final TrackedData<Boolean> HAS_TARGET = DataTracker.registerData(GhostEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
@@ -47,6 +52,10 @@ public class GhostEntity extends BWHostileEntity {
 	
 	public static DefaultAttributeContainer.Builder createAttributes() {
 		return MobEntity.createMobAttributes().add(EntityAttributes.GENERIC_MAX_HEALTH, 20).add(EntityAttributes.GENERIC_FLYING_SPEED, 0.25).add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 1).add(EntityAttributes.GENERIC_FOLLOW_RANGE, 8);
+	}
+	
+	public static boolean canSpawn(EntityType<GhostEntity> type, ServerWorldAccess world, SpawnReason spawnReason, BlockPos pos, Random random) {
+		return findPos(world, pos) == null && MobEntity.canMobSpawn(type, world, spawnReason, pos, random);
 	}
 	
 	@Override
@@ -121,6 +130,9 @@ public class GhostEntity extends BWHostileEntity {
 	
 	@Override
 	public void setTarget(@Nullable LivingEntity target) {
+		if (findPos((ServerWorldAccess) world, getBlockPos()) != null) {
+			target = null;
+		}
 		super.setTarget(target);
 		dataTracker.set(HAS_TARGET, target != null);
 	}
@@ -142,7 +154,7 @@ public class GhostEntity extends BWHostileEntity {
 	}
 	
 	public static StatusEffectInstance getEffect(int type, int duration) {
-		return new StatusEffectInstance(type == 1 ? StatusEffects.HUNGER : type == 2 ? StatusEffects.BLINDNESS : type == 3 ? StatusEffects.SLOWNESS : StatusEffects.NAUSEA, duration);
+		return new StatusEffectInstance(type == 1 ? StatusEffects.HUNGER : type == 2 ? StatusEffects.SLOWNESS : type == 3 ? BWStatusEffects.CORROSION : BWStatusEffects.SINKING, duration);
 	}
 	
 	private class GhostMoveControl extends MoveControl {
@@ -214,41 +226,50 @@ public class GhostEntity extends BWHostileEntity {
 		
 		private BlockPos findTarget(BlockPos.Mutable target, int tries) {
 			if (tries <= 8) {
-				while (world.getBlockState(target).getMaterial().isSolid()) {
+				while (!World.isOutOfBuildLimitVertically(target) && world.getBlockState(target).getMaterial().isSolid()) {
 					target.set(target.getX(), target.getY() + 1, target.getZ());
 				}
-				while (!world.getBlockState(target).getMaterial().isSolid()) {
+				while (!World.isOutOfBuildLimitVertically(target) && !world.getBlockState(target).getMaterial().isSolid()) {
 					target.set(target.getX(), target.getY() - 1, target.getZ());
 				}
 				target.set(target.getX(), target.getY() + random.nextInt(8), target.getZ());
-				for (Long longPos : BWWorldState.get(world).potentialCandelabras) {
-					BlockPos candelabraPos = BlockPos.fromLong(longPos);
-					double distance = Math.sqrt(candelabraPos.getSquaredDistance(target));
-					if (distance <= Byte.MAX_VALUE) {
-						int radius = -1;
-						BlockEntity blockEntity = world.getBlockEntity(candelabraPos);
-						BlockState state = world.getBlockState(candelabraPos);
-						if (blockEntity instanceof WitchAltarBlockEntity) {
-							WitchAltarBlockEntity witchAltar = (WitchAltarBlockEntity) blockEntity;
-							for (int i = 0; i < witchAltar.size(); i++) {
-								Block block = Block.getBlockFromItem(witchAltar.getStack(i).getItem());
-								if (block instanceof CandelabraBlock) {
-									radius = ((CandelabraBlock) block).repellentRadius;
-									break;
-								}
-							}
-						}
-						else if (state.getBlock() instanceof CandelabraBlock && state.get(Properties.LIT)) {
-							radius = ((CandelabraBlock) state.getBlock()).repellentRadius;
-						}
-						if (distance <= radius) {
-							return findTarget(target.set(candelabraPos.getX() + MathHelper.nextDouble(random, -radius, radius), candelabraPos.getY() + MathHelper.nextDouble(random, -radius, radius), candelabraPos.getZ() + MathHelper.nextDouble(random, -radius, radius)), ++tries);
-						}
-					}
+				Pair<BlockPos, Integer> validSpot = findPos((ServerWorldAccess) world, target);
+				if (validSpot != null) {
+					int radius = validSpot.getRight();
+					return findTarget(target.set(validSpot.getLeft().getX() + MathHelper.nextDouble(random, -radius, radius), validSpot.getLeft().getY() + MathHelper.nextDouble(random, -radius, radius), validSpot.getLeft().getZ() + MathHelper.nextDouble(random, -radius, radius)), ++tries);
 				}
 				return target.toImmutable();
 			}
 			return null;
 		}
+	}
+	
+	private static Pair<BlockPos, Integer> findPos(ServerWorldAccess world, BlockPos pos) {
+		for (Long longPos : BWWorldState.get(world.toServerWorld()).potentialCandelabras) {
+			BlockPos candelabraPos = BlockPos.fromLong(longPos);
+			double distance = Math.sqrt(candelabraPos.getSquaredDistance(pos));
+			if (distance <= Byte.MAX_VALUE) {
+				int radius = -1;
+				BlockEntity blockEntity = world.getBlockEntity(candelabraPos);
+				BlockState state = world.getBlockState(candelabraPos);
+				if (blockEntity instanceof WitchAltarBlockEntity) {
+					WitchAltarBlockEntity witchAltar = (WitchAltarBlockEntity) blockEntity;
+					for (int i = 0; i < witchAltar.size(); i++) {
+						Block block = Block.getBlockFromItem(witchAltar.getStack(i).getItem());
+						if (block instanceof CandelabraBlock) {
+							radius = ((CandelabraBlock) block).repellentRadius;
+							break;
+						}
+					}
+				}
+				else if (state.getBlock() instanceof CandelabraBlock && state.get(Properties.LIT)) {
+					radius = ((CandelabraBlock) state.getBlock()).repellentRadius;
+				}
+				if (distance <= radius) {
+					return new Pair<>(candelabraPos, radius);
+				}
+			}
+		}
+		return null;
 	}
 }

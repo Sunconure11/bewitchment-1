@@ -1,8 +1,8 @@
 package moriyashiine.bewitchment.common.entity.projectile;
 
 import moriyashiine.bewitchment.common.entity.interfaces.MasterAccessor;
-import moriyashiine.bewitchment.client.network.packet.CreateNonLivingEntityPacket;
 import moriyashiine.bewitchment.common.entity.living.HerneEntity;
+import moriyashiine.bewitchment.common.registry.BWEntityTypes;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.enchantment.EnchantmentHelper;
@@ -15,7 +15,6 @@ import net.minecraft.entity.projectile.PersistentProjectileEntity;
 import net.minecraft.entity.projectile.ProjectileUtil;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.Packet;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.Vec3d;
@@ -24,11 +23,15 @@ import org.jetbrains.annotations.Nullable;
 
 @SuppressWarnings("ConstantConditions")
 public class HornedSpearEntity extends PersistentProjectileEntity {
-	public ItemStack spear;
+	public ItemStack spear = ItemStack.EMPTY;
 	private boolean dealtDamage = false;
 	
 	public HornedSpearEntity(EntityType<? extends PersistentProjectileEntity> entityType, World world) {
 		super(entityType, world);
+	}
+	
+	public HornedSpearEntity(World world, double x, double y, double z) {
+		super(BWEntityTypes.HORNED_SPEAR, x, y, z, world);
 	}
 	
 	public HornedSpearEntity(EntityType<? extends PersistentProjectileEntity> type, LivingEntity owner, World world, ItemStack stack) {
@@ -42,18 +45,12 @@ public class HornedSpearEntity extends PersistentProjectileEntity {
 	}
 	
 	@Override
-	public Packet<?> createSpawnPacket() {
-		return CreateNonLivingEntityPacket.send(this);
-	}
-	
-	@Override
 	protected void onEntityHit(EntityHitResult result) {
 		Entity owner = getOwner();
 		Entity entity = result.getEntity();
-		float damage = 9;
-		if (entity instanceof LivingEntity && entity instanceof MasterAccessor && owner != null && !owner.getUuid().equals(((MasterAccessor) entity).getMasterUUID())) {
-			LivingEntity livingEntity = (LivingEntity) entity;
-			damage += EnchantmentHelper.getAttackDamage(spear, livingEntity.getGroup());
+		float damage = 7;
+		if (entity instanceof LivingEntity) {
+			damage += EnchantmentHelper.getAttackDamage(spear, ((LivingEntity) entity).getGroup());
 		}
 		if (owner instanceof HerneEntity) {
 			damage *= 3;

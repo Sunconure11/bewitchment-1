@@ -1,13 +1,14 @@
 package moriyashiine.bewitchment.common.registry;
 
 import com.terraformersmc.terraform.boat.TerraformBoatItem;
-import com.terraformersmc.terraform.leaves.block.TerraformLeavesBlock;
 import com.terraformersmc.terraform.sign.block.TerraformSignBlock;
 import com.terraformersmc.terraform.sign.block.TerraformWallSignBlock;
 import com.terraformersmc.terraform.wood.block.*;
+import moriyashiine.bewitchment.api.BewitchmentAPI;
 import moriyashiine.bewitchment.api.block.CandelabraBlock;
 import moriyashiine.bewitchment.api.block.PoppetShelfBlock;
 import moriyashiine.bewitchment.api.block.WitchAltarBlock;
+import moriyashiine.bewitchment.api.item.BroomItem;
 import moriyashiine.bewitchment.api.item.PoppetItem;
 import moriyashiine.bewitchment.api.item.SigilItem;
 import moriyashiine.bewitchment.common.Bewitchment;
@@ -20,30 +21,36 @@ import moriyashiine.bewitchment.common.block.util.BWCropBlock;
 import moriyashiine.bewitchment.common.block.util.BWOreBlock;
 import moriyashiine.bewitchment.common.block.util.BWSaplingBlock;
 import moriyashiine.bewitchment.common.item.*;
-import moriyashiine.bewitchment.common.item.util.BWAxeItem;
-import moriyashiine.bewitchment.common.item.util.BWHoeItem;
-import moriyashiine.bewitchment.common.item.util.BWPickaxeItem;
+import moriyashiine.bewitchment.common.item.util.BWBookItem;
 import moriyashiine.bewitchment.common.world.generator.tree.generator.CypressSaplingGenerator;
 import moriyashiine.bewitchment.common.world.generator.tree.generator.DragonsBloodSaplingGenerator;
 import moriyashiine.bewitchment.common.world.generator.tree.generator.ElderSaplingGenerator;
 import moriyashiine.bewitchment.common.world.generator.tree.generator.JuniperSaplingGenerator;
+import moriyashiine.bewitchment.mixin.BlocksAccessor;
 import net.fabricmc.fabric.api.object.builder.v1.block.FabricBlockSettings;
 import net.fabricmc.fabric.api.registry.CompostingChanceRegistry;
 import net.fabricmc.fabric.api.registry.FlammableBlockRegistry;
 import net.fabricmc.fabric.api.registry.FuelRegistry;
 import net.minecraft.block.*;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.EquipmentSlot;
+import net.minecraft.entity.LivingEntity;
 import net.minecraft.item.*;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.BlockSoundGroup;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.state.property.Properties;
 import net.minecraft.util.DyeColor;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.Rarity;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.registry.Registry;
+import net.minecraft.world.World;
 
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Random;
 
 import static net.fabricmc.fabric.api.object.builder.v1.block.FabricBlockSettings.copyOf;
 import static net.fabricmc.fabric.api.object.builder.v1.block.FabricBlockSettings.of;
@@ -54,7 +61,12 @@ public class BWObjects {
 	
 	//misc_no_item
 	public static final Block SALT_LINE = create("salt_line", new SaltLineBlock(copyOf(Blocks.REDSTONE_WIRE)), false);
-	public static final Block TEMPORARY_COBWEB = create("temporary_cobweb", new TemporaryCobwebBlock(copyOf(Blocks.COBWEB).dropsNothing().ticksRandomly()), false);
+	public static final Block TEMPORARY_COBWEB = create("temporary_cobweb", new CobwebBlock(copyOf(Blocks.COBWEB).dropsNothing().ticksRandomly()) {
+		@Override
+		public void scheduledTick(BlockState state, ServerWorld world, BlockPos pos, Random random) {
+			world.setBlockState(pos, Blocks.AIR.getDefaultState());
+		}
+	}, false);
 	public static final Block GOLDEN_GLYPH = create("golden_glyph", new GlyphBlock(FabricBlockSettings.of(Material.SUPPORTED).sounds(new BlockSoundGroup(1, 1, SoundEvents.BLOCK_STONE_BREAK, SoundEvents.BLOCK_STONE_STEP, BWSoundEvents.BLOCK_GLPYH_PLACE, SoundEvents.BLOCK_STONE_HIT, SoundEvents.BLOCK_STONE_FALL)).noCollision().dropsNothing().strength(1, 0)), false);
 	public static final Block GLYPH = create("glyph", new GlyphBlock(copyOf(GOLDEN_GLYPH)), false);
 	public static final Block FIERY_GLYPH = create("fiery_glyph", new GlyphBlock(copyOf(GOLDEN_GLYPH).luminance(4)), false);
@@ -70,7 +82,7 @@ public class BWObjects {
 	public static final Block STRIPPED_JUNIPER_WOOD = create("stripped_juniper_wood", new PillarBlock(copyOf(STRIPPED_JUNIPER_LOG)), true);
 	public static final Block JUNIPER_LOG = create("juniper_log", new StrippableLogBlock(() -> STRIPPED_JUNIPER_LOG, MaterialColor.BROWN, copyOf(STRIPPED_JUNIPER_LOG)), true);
 	public static final Block JUNIPER_WOOD = create("juniper_wood", new StrippableLogBlock(() -> STRIPPED_JUNIPER_WOOD, MaterialColor.BROWN, copyOf(STRIPPED_JUNIPER_LOG)), true);
-	public static final Block JUNIPER_LEAVES = create("juniper_leaves", new TerraformLeavesBlock(), true);
+	public static final Block JUNIPER_LEAVES = create("juniper_leaves", BlocksAccessor.callCreateLeavesBlock(), true);
 	public static final Block JUNIPER_SAPLING = create("juniper_sapling", new BWSaplingBlock(new JuniperSaplingGenerator(), copyOf(Blocks.OAK_SAPLING)), true);
 	public static final Block POTTED_JUNIPER_SAPLING = create("potted_juniper_sapling", new FlowerPotBlock(JUNIPER_SAPLING, copyOf(Blocks.POTTED_OAK_SAPLING)), false);
 	public static final Block JUNIPER_PLANKS = create("juniper_planks", new Block(copyOf(Blocks.OAK_PLANKS)), true);
@@ -95,7 +107,7 @@ public class BWObjects {
 	public static final Block STRIPPED_CYPRESS_WOOD = create("stripped_cypress_wood", new PillarBlock(copyOf(STRIPPED_CYPRESS_LOG)), true);
 	public static final Block CYPRESS_LOG = create("cypress_log", new StrippableLogBlock(() -> STRIPPED_CYPRESS_LOG, MaterialColor.BROWN, copyOf(STRIPPED_CYPRESS_LOG)), true);
 	public static final Block CYPRESS_WOOD = create("cypress_wood", new StrippableLogBlock(() -> STRIPPED_CYPRESS_WOOD, MaterialColor.BROWN, copyOf(STRIPPED_CYPRESS_LOG)), true);
-	public static final Block CYPRESS_LEAVES = create("cypress_leaves", new TerraformLeavesBlock(), true);
+	public static final Block CYPRESS_LEAVES = create("cypress_leaves", BlocksAccessor.callCreateLeavesBlock(), true);
 	public static final Block CYPRESS_SAPLING = create("cypress_sapling", new BWSaplingBlock(new CypressSaplingGenerator(), copyOf(JUNIPER_SAPLING)), true);
 	public static final Block POTTED_CYPRESS_SAPLING = create("potted_cypress_sapling", new FlowerPotBlock(CYPRESS_SAPLING, copyOf(POTTED_JUNIPER_SAPLING)), false);
 	public static final Block CYPRESS_PLANKS = create("cypress_planks", new Block(copyOf(JUNIPER_PLANKS)), true);
@@ -120,7 +132,7 @@ public class BWObjects {
 	public static final Block STRIPPED_ELDER_WOOD = create("stripped_elder_wood", new PillarBlock(copyOf(STRIPPED_ELDER_LOG)), true);
 	public static final Block ELDER_LOG = create("elder_log", new StrippableLogBlock(() -> STRIPPED_ELDER_LOG, MaterialColor.BROWN, copyOf(STRIPPED_ELDER_LOG)), true);
 	public static final Block ELDER_WOOD = create("elder_wood", new StrippableLogBlock(() -> STRIPPED_ELDER_WOOD, MaterialColor.BROWN, copyOf(STRIPPED_ELDER_LOG)), true);
-	public static final Block ELDER_LEAVES = create("elder_leaves", new TerraformLeavesBlock(), true);
+	public static final Block ELDER_LEAVES = create("elder_leaves", BlocksAccessor.callCreateLeavesBlock(), true);
 	public static final Block ELDER_SAPLING = create("elder_sapling", new BWSaplingBlock(new ElderSaplingGenerator(), copyOf(JUNIPER_SAPLING)), true);
 	public static final Block POTTED_ELDER_SAPLING = create("potted_elder_sapling", new FlowerPotBlock(ELDER_SAPLING, copyOf(POTTED_JUNIPER_SAPLING)), false);
 	public static final Block ELDER_PLANKS = create("elder_planks", new Block(copyOf(JUNIPER_PLANKS)), true);
@@ -145,7 +157,7 @@ public class BWObjects {
 	public static final Block STRIPPED_DRAGONS_BLOOD_WOOD = create("stripped_dragons_blood_wood", new PillarBlock(copyOf(STRIPPED_DRAGONS_BLOOD_LOG)), true);
 	public static final Block DRAGONS_BLOOD_LOG = create("dragons_blood_log", new DragonsBloodLogBlock(() -> STRIPPED_DRAGONS_BLOOD_LOG, MaterialColor.BROWN, copyOf(STRIPPED_DRAGONS_BLOOD_LOG).ticksRandomly()), true);
 	public static final Block DRAGONS_BLOOD_WOOD = create("dragons_blood_wood", new StrippableLogBlock(() -> STRIPPED_DRAGONS_BLOOD_WOOD, MaterialColor.BROWN, copyOf(STRIPPED_DRAGONS_BLOOD_LOG)), true);
-	public static final Block DRAGONS_BLOOD_LEAVES = create("dragons_blood_leaves", new TerraformLeavesBlock(), true);
+	public static final Block DRAGONS_BLOOD_LEAVES = create("dragons_blood_leaves", BlocksAccessor.callCreateLeavesBlock(), true);
 	public static final Block DRAGONS_BLOOD_SAPLING = create("dragons_blood_sapling", new BWSaplingBlock(new DragonsBloodSaplingGenerator(), copyOf(JUNIPER_SAPLING)), true);
 	public static final Block POTTED_DRAGONS_BLOOD_SAPLING = create("potted_dragons_blood_sapling", new FlowerPotBlock(DRAGONS_BLOOD_SAPLING, copyOf(POTTED_JUNIPER_SAPLING)), false);
 	public static final Block DRAGONS_BLOOD_PLANKS = create("dragons_blood_planks", new Block(copyOf(JUNIPER_PLANKS)), true);
@@ -173,7 +185,15 @@ public class BWObjects {
 	public static final Block THICK_BRAMBLE = create("thick_bramble", new BrambleBlock(copyOf(ENDER_BRAMBLE)), true);
 	public static final Block FLEETING_BRAMBLE = create("fleeting_bramble", new BrambleBlock(copyOf(ENDER_BRAMBLE)), true);
 	//material_block
-	public static final Block SILVER_BLOCK = create("silver_block", new Block(copyOf(Blocks.GOLD_BLOCK)), true);
+	public static final Block SILVER_BLOCK = create("silver_block", new Block(copyOf(Blocks.GOLD_BLOCK)) {
+		@Override
+		public void onSteppedOn(World world, BlockPos pos, Entity entity) {
+			if (!world.isClient && entity instanceof LivingEntity && BewitchmentAPI.isWeakToSilver((LivingEntity) entity)) {
+				entity.damage(BWDamageSources.MAGIC_COPY, 1);
+			}
+			super.onSteppedOn(world, pos, entity);
+		}
+	}, true);
 	public static final Block SALT_BLOCK = create("salt_block", new Block(copyOf(Blocks.COAL_BLOCK)), true);
 	public static final Block DRAGONS_BLOOD_RESIN_BLOCK = create("dragons_blood_resin_block", new Block(copyOf(Blocks.NETHER_WART_BLOCK)), true);
 	public static final Block SILVER_ORE = create("silver_ore", new Block(copyOf(Blocks.GOLD_ORE)), true);
@@ -185,10 +205,11 @@ public class BWObjects {
 	public static final Block HEDGEWITCH_CARPET = create("hedgewitch_carpet", new BWCarpetBlock(DyeColor.GREEN, copyOf(Blocks.WHITE_CARPET)), true);
 	public static final Block ALCHEMIST_CARPET = create("alchemist_carpet", new BWCarpetBlock(DyeColor.LIGHT_GRAY, copyOf(HEDGEWITCH_CARPET)), true);
 	public static final Block BESMIRCHED_CARPET = create("besmirched_carpet", new BWCarpetBlock(DyeColor.BLACK, copyOf(HEDGEWITCH_CARPET)), true);
-	public static final Block IRON_CANDELABRA = create("iron_candelabra", new CandelabraBlock(copyOf(Blocks.IRON_BLOCK).luminance(blockState -> blockState.get(Properties.LIT) ? 15 : 0), (byte) 8), true);
-	public static final Block GOLDEN_CANDELABRA = create("golden_candelabra", new CandelabraBlock(copyOf(Blocks.GOLD_BLOCK).luminance(blockState -> blockState.get(Properties.LIT) ? 15 : 0), (byte) 16), true);
-	public static final Block SILVER_CANDELABRA = create("silver_candelabra", new CandelabraBlock(copyOf(SILVER_BLOCK).luminance(blockState -> blockState.get(Properties.LIT) ? 15 : 0), (byte) 16), true);
-	public static final Block NETHERITE_CANDELABRA = create("netherite_candelabra", new CandelabraBlock(copyOf(Blocks.NETHERITE_BLOCK).luminance(blockState -> blockState.get(Properties.LIT) ? 15 : 0), (byte) 32), true);
+	public static final Block IRON_CANDELABRA = create("iron_candelabra", new CandelabraBlock(copyOf(Blocks.IRON_BLOCK).luminance(blockState -> blockState.get(Properties.LIT) ? 15 : 0), (byte) 16), true);
+	public static final Block GOLDEN_CANDELABRA = create("golden_candelabra", new CandelabraBlock(copyOf(Blocks.GOLD_BLOCK).luminance(blockState -> blockState.get(Properties.LIT) ? 15 : 0), (byte) 32), true);
+	public static final Block SILVER_CANDELABRA = create("silver_candelabra", new CandelabraBlock(copyOf(SILVER_BLOCK).luminance(blockState -> blockState.get(Properties.LIT) ? 15 : 0), (byte) 32), true);
+	public static final Block NETHERITE_CANDELABRA = create("netherite_candelabra", new CandelabraBlock(copyOf(Blocks.NETHERITE_BLOCK).luminance(blockState -> blockState.get(Properties.LIT) ? 15 : 0), (byte) 64), false);
+	public static final Item NETHERITE_CANDELABRA_ITEM = create("netherite_candelabra", new BlockItem(NETHERITE_CANDELABRA, gen().fireproof()));
 	public static final Block BLESSED_STONE = create("blessed_stone", new Block(copyOf(Blocks.BEDROCK).dropsNothing()), true);
 	//block_entity
 	public static final Block[] STONE_WITCH_ALTAR = createAltar("stone_witch_altar", copyOf(Blocks.STONE));
@@ -215,11 +236,23 @@ public class BWObjects {
 	public static final Block CYPRESS_POPPET_SHELF = create("cypress_poppet_shelf", new PoppetShelfBlock(copyOf(CYPRESS_PLANKS).nonOpaque()), true);
 	public static final Block ELDER_POPPET_SHELF = create("elder_poppet_shelf", new PoppetShelfBlock(copyOf(ELDER_PLANKS).nonOpaque()), true);
 	public static final Block DRAGONS_BLOOD_POPPET_SHELF = create("dragons_blood_poppet_shelf", new PoppetShelfBlock(copyOf(DRAGONS_BLOOD_PLANKS).nonOpaque()), true);
+	public static final Block WHITE_COFFIN = create("white_coffin", new CoffinBlock(DyeColor.WHITE, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
+	public static final Block ORANGE_COFFIN = create("orange_coffin", new CoffinBlock(DyeColor.ORANGE, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
+	public static final Block MAGENTA_COFFIN = create("magenta_coffin", new CoffinBlock(DyeColor.MAGENTA, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
+	public static final Block LIGHT_BLUE_COFFIN = create("light_blue_coffin", new CoffinBlock(DyeColor.LIGHT_BLUE, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
+	public static final Block YELLOW_COFFIN = create("yellow_coffin", new CoffinBlock(DyeColor.YELLOW, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
+	public static final Block LIME_COFFIN = create("lime_coffin", new CoffinBlock(DyeColor.LIME, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
+	public static final Block PINK_COFFIN = create("pink_coffin", new CoffinBlock(DyeColor.PINK, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
+	public static final Block GRAY_COFFIN = create("gray_coffin", new CoffinBlock(DyeColor.GRAY, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
+	public static final Block LIGHT_GRAY_COFFIN = create("light_gray_coffin", new CoffinBlock(DyeColor.LIGHT_GRAY, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
+	public static final Block CYAN_COFFIN = create("cyan_coffin", new CoffinBlock(DyeColor.CYAN, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
+	public static final Block PURPLE_COFFIN = create("purple_coffin", new CoffinBlock(DyeColor.PURPLE, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
+	public static final Block BLUE_COFFIN = create("blue_coffin", new CoffinBlock(DyeColor.BLUE, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
+	public static final Block BROWN_COFFIN = create("brown_coffin", new CoffinBlock(DyeColor.BROWN, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
+	public static final Block GREEN_COFFIN = create("green_coffin", new CoffinBlock(DyeColor.GREEN, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
+	public static final Block RED_COFFIN = create("red_coffin", new CoffinBlock(DyeColor.RED, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
+	public static final Block BLACK_COFFIN = create("black_coffin", new CoffinBlock(DyeColor.BLACK, copyOf(CYPRESS_PLANKS).nonOpaque()), true);
 	//armor
-	public static final Item SILVER_HELMET = create("silver_helmet", new ArmorItem(BWMaterials.SILVER_ARMOR, EquipmentSlot.HEAD, gen()));
-	public static final Item SILVER_CHESTPLATE = create("silver_chestplate", new ArmorItem(BWMaterials.SILVER_ARMOR, EquipmentSlot.CHEST, gen()));
-	public static final Item SILVER_LEGGINGS = create("silver_leggings", new ArmorItem(BWMaterials.SILVER_ARMOR, EquipmentSlot.LEGS, gen()));
-	public static final Item SILVER_BOOTS = create("silver_boots", new ArmorItem(BWMaterials.SILVER_ARMOR, EquipmentSlot.FEET, gen()));
 	public static final Item HEDGEWITCH_HOOD = create("hedgewitch_hood", new ArmorItem(BWMaterials.HEDGEWITCH_ARMOR, EquipmentSlot.HEAD, gen()));
 	public static final Item HEDGEWITCH_HAT = create("hedgewitch_hat", new ArmorItem(BWMaterials.HEDGEWITCH_ARMOR, EquipmentSlot.HEAD, gen()));
 	public static final Item HEDGEWITCH_ROBES = create("hedgewitch_robes", new ArmorItem(BWMaterials.HEDGEWITCH_ARMOR, EquipmentSlot.CHEST, gen()));
@@ -233,23 +266,29 @@ public class BWObjects {
 	public static final Item BESMIRCHED_ROBES = create("besmirched_robes", new ArmorItem(BWMaterials.BESMIRCHED_ARMOR, EquipmentSlot.CHEST, gen()));
 	public static final Item BESMIRCHED_PANTS = create("besmirched_pants", new ArmorItem(BWMaterials.BESMIRCHED_ARMOR, EquipmentSlot.LEGS, gen()));
 	public static final Item HARBINGER = create("harbinger", new ArmorItem(BWMaterials.HARBINGER_ARMOR, EquipmentSlot.FEET, gen().rarity(Rarity.RARE).maxDamage(444).fireproof()));
+	//trinket
+	public static final Item NAZAR = create("nazar", new NazarItem(gen().maxCount(1)));
+	public static final Item SPECTER_BANGLE = create("specter_bangle", new SpecterBangleItem(gen().maxCount(1)));
+	public static final Item PRICKLY_BELT = create("prickly_belt", new PricklyBeltItem(gen().maxCount(1)));
+	public static final Item HELLISH_BAUBLE = create("hellish_bauble", new HellishBaubleItem(gen().maxCount(1).fireproof()));
+	public static final Item DRUID_BAND = create("druid_band", new DruidBandItem(gen().maxCount(1)));
+	public static final Item ZEPHYR_HARNESS = create("zephyr_harness", new ZephyrHarnessItem(gen().maxCount(1)));
 	//tool
-	public static final Item SILVER_SWORD = create("silver_sword", new SwordItem(BWMaterials.SILVER_TOOL, 3, -2.4f, gen()));
-	public static final Item SILVER_PICKAXE = create("silver_pickaxe", new BWPickaxeItem(BWMaterials.SILVER_TOOL, 1, -2.8f, gen()));
-	public static final Item SILVER_AXE = create("silver_axe", new BWAxeItem(BWMaterials.SILVER_TOOL, 6, -3, gen()));
-	public static final Item SILVER_SHOVEL = create("silver_shovel", new ShovelItem(BWMaterials.SILVER_TOOL, 1.5f, -2.8f, gen()));
-	public static final Item SILVER_HOE = create("silver_hoe", new BWHoeItem(BWMaterials.SILVER_TOOL, -2, -3, gen()));
 	public static final Item ATHAME = create("athame", new AthameItem(BWMaterials.SILVER_TOOL, 1, -2, gen()));
 	public static final Item SILVER_ARROW = create("silver_arrow", new SilverArrowItem(gen()));
 	public static final Item SCEPTER = create("scepter", new ScepterItem(gen().rarity(Rarity.RARE).maxDamage(64).fireproof()));
-	public static final Item CADUCEUS = create("caduceus", new CaduceusItem(ToolMaterials.NETHERITE, 6, -3.2f, gen().rarity(Rarity.RARE).maxDamage(666).fireproof()));
-	public static final Item HORNED_SPEAR = create("horned_spear", new HornedSpearItem(ToolMaterials.NETHERITE, 4, -2.4f, gen().rarity(Rarity.RARE).maxDamage(1008).fireproof()));
+	public static final Item CADUCEUS = create("caduceus", new CaduceusItem(0, -3, ToolMaterials.NETHERITE, new HashSet<>(), gen().rarity(Rarity.RARE).maxDamage(1998).fireproof()));
+	public static final Item HORNED_SPEAR = create("horned_spear", new HornedSpearItem(ToolMaterials.NETHERITE, 2, -2.4f, gen().rarity(Rarity.RARE).maxDamage(1008).fireproof()));
 	public static final Item CHALK = create("chalk", new ChalkItem(gen().maxDamage(128), GLYPH));
 	public static final Item GOLDEN_CHALK = create("golden_chalk", new ChalkItem(gen().maxDamage(128), GOLDEN_GLYPH));
 	public static final Item FIERY_CHALK = create("fiery_chalk", new ChalkItem(gen().maxDamage(128), FIERY_GLYPH));
 	public static final Item ELDRITCH_CHALK = create("eldritch_chalk", new ChalkItem(gen().maxDamage(128), ELDRITCH_GLYPH));
 	public static final Item TAGLOCK = create("taglock", new TaglockItem(gen().recipeRemainder(Items.GLASS_BOTTLE)));
 	public static final Item WAYSTONE = create("waystone", new WaystoneItem(gen().maxDamage(3)));
+	public static final Item JUNIPER_BROOM = create("juniper_broom", new BroomItem(gen().maxCount(1), BWEntityTypes.JUNIPER_BROOM));
+	public static final Item CYPRESS_BROOM = create("cypress_broom", new BroomItem(gen().maxCount(1), BWEntityTypes.CYPRESS_BROOM));
+	public static final Item ELDER_BROOM = create("elder_broom", new BroomItem(gen().maxCount(1), BWEntityTypes.ELDER_BROOM));
+	public static final Item DRAGONS_BLOOD_BROOM = create("dragons_blood_broom", new DragonsBloodBroomItem(gen().maxCount(1), BWEntityTypes.DRAGONS_BLOOD_BROOM));
 	public static final Item MENDING_SIGIL = create("mending_sigil", new SigilItem(gen(), BWSigils.MENDING));
 	public static final Item CLEANSING_SIGIL = create("cleansing_sigil", new SigilItem(gen(), BWSigils.CLEANSING));
 	public static final Item JUDGMENT_SIGIL = create("judgment_sigil", new SigilItem(gen(), BWSigils.JUDGMENT));
@@ -263,9 +302,9 @@ public class BWObjects {
 	public static final Item RUIN_SIGIL = create("ruin_sigil", new SigilItem(gen(), BWSigils.RUIN));
 	public static final Item HEAVY_SIGIL = create("heavy_sigil", new SigilItem(gen(), BWSigils.HEAVY));
 	public static final PoppetItem PROTECTION_POPPET = create("protection_poppet", new PoppetItem(gen().maxDamage(128), true));
-	public static final PoppetItem DEATH_PROTECTION_POPPET = create("death_protection_poppet", new PoppetItem(gen().maxDamage(1), true));
-	public static final PoppetItem VOODOO_POPPET = create("voodoo_poppet", new PoppetItem(gen().maxDamage(32), false));
-	public static final PoppetItem VOODOO_PROTECTION_POPPET = create("voodoo_protection_poppet", new PoppetItem(gen().maxDamage(32), true));
+	public static final PoppetItem DEATH_PROTECTION_POPPET = create("death_protection_poppet", new PoppetItem(gen().maxDamage(1), false));
+	public static final PoppetItem VOODOO_POPPET = create("voodoo_poppet", new PoppetItem(gen().maxDamage(128), false));
+	public static final PoppetItem VOODOO_PROTECTION_POPPET = create("voodoo_protection_poppet", new PoppetItem(gen().maxDamage(128), true));
 	public static final PoppetItem MENDING_POPPET = create("mending_poppet", new PoppetItem(gen().maxDamage(1), true));
 	public static final PoppetItem CURSE_POPPET = create("curse_poppet", new CursePoppetItem(gen().maxDamage(1), true));
 	public static final PoppetItem VAMPIRIC_POPPET = create("vampiric_poppet", new PoppetItem(gen().maxDamage(128), false));
@@ -286,7 +325,7 @@ public class BWObjects {
 	public static final Item ACONITE_SEEDS = create("aconite_seeds", new AliasedBlockItem(ACONITE_CROP, gen()));
 	public static final Item BELLADONNA = create("belladonna", new Item(gen()));
 	public static final Item BELLADONNA_SEEDS = create("belladonna_seeds", new AliasedBlockItem(BELLADONNA_CROP, gen()));
-	public static final Item GARLIC = create("garlic", new AliasedBlockItem(GARLIC_CROP, gen().food(FoodComponents.CARROT)));
+	public static final Item GARLIC = create("garlic", new AliasedBlockItem(GARLIC_CROP, gen().food(FoodComponents.POTATO)));
 	public static final Item MANDRAKE_ROOT = create("mandrake_root", new Item(gen()));
 	public static final Item MANDRAKE_SEEDS = create("mandrake_seeds", new AliasedBlockItem(MANDRAKE_CROP, gen()));
 	public static final Item OAK_BARK = create("oak_bark", new Item(gen()));
@@ -302,26 +341,28 @@ public class BWObjects {
 	public static final Item DEMON_HORN = create("demon_horn", new Item(gen().fireproof()));
 	public static final Item DEMON_HEART = create("demon_heart", new Item(gen().food(BWFoodComponents.DEMON_HEART).rarity(Rarity.UNCOMMON).fireproof()));
 	public static final Item BOTTLE_OF_BLOOD = create("bottle_of_blood", new BottleOfBloodItem(gen().maxCount(16).recipeRemainder(Items.GLASS_BOTTLE)));
-	public static final Item GRILLED_GARLIC = create("grilled_garlic", new Item(gen().food(FoodComponents.BAKED_POTATO)));
-	public static final Item GARLIC_BREAD = create("garlic_bread", new Item(gen().food(FoodComponents.PUMPKIN_PIE)));
+	public static final Item GRILLED_GARLIC = create("grilled_garlic", new Item(gen().food(FoodComponents.CARROT)));
+	public static final Item GARLIC_BREAD = create("garlic_bread", new Item(gen().food(BWFoodComponents.GARLIC_BREAD)));
 	public static final Item WITCHBERRY = create("witchberry", new Item(gen().food(BWFoodComponents.WITCHBERRY)));
 	public static final Item WITCHBERRY_PIE = create("witchberry_pie", new Item(gen().food(BWFoodComponents.WITCHBERRY_PIE)));
 	public static final Item WITCHBERRY_COOKIE = create("witchberry_cookie", new Item(gen().food(BWFoodComponents.WITCHBERRY_COOKIE)));
-	public static final Item GROTESQUE_STEW = create("grotesque_stew", new GrotestqueStew(gen().food(BWFoodComponents.DEMON_HEART).maxCount(1).recipeRemainder(Items.BOWL)));
+	public static final Item GROTESQUE_STEW = create("grotesque_stew", new GrotestqueStewItem(gen().food(BWFoodComponents.DEMON_HEART).maxCount(1).recipeRemainder(Items.BOWL)));
 	//spawn_egg
 	public static final Item OWL_SPAWN_EGG = create("owl_spawn_egg", new SpawnEggItem(BWEntityTypes.OWL, 0x7f3f00, 0xc0c0c0, gen()));
 	public static final Item RAVEN_SPAWN_EGG = create("raven_spawn_egg", new SpawnEggItem(BWEntityTypes.RAVEN, 0x3f3f3f, 0x000000, gen()));
 	public static final Item SNAKE_SPAWN_EGG = create("snake_spawn_egg", new SpawnEggItem(BWEntityTypes.SNAKE, 0x7f3f00, 0x3f3f3f, gen()));
 	public static final Item TOAD_SPAWN_EGG = create("toad_spawn_egg", new SpawnEggItem(BWEntityTypes.TOAD, 0x3f3f00, 0x00c200, gen()));
 	public static final Item GHOST_SPAWN_EGG = create("ghost_spawn_egg", new SpawnEggItem(BWEntityTypes.GHOST, 0xcacaca, 0x969696, gen()));
-	public static final Item HELLHOUND_SPAWN_EGG = create("hellhound_spawn_egg", new SpawnEggItem(BWEntityTypes.HELLHOUND, 0xc82000, 0x802020, gen()));
 	public static final Item VAMPIRE_SPAWN_EGG = create("vampire_spawn_egg", new SpawnEggItem(BWEntityTypes.VAMPIRE, 0xddcca8, 0x7d0000, gen()));
 	public static final Item WEREWOLF_SPAWN_EGG = create("werewolf_spawn_egg", new SpawnEggItem(BWEntityTypes.WEREWOLF, 0x9f9a96, 0x532f0f, gen()));
+	public static final Item HELLHOUND_SPAWN_EGG = create("hellhound_spawn_egg", new SpawnEggItem(BWEntityTypes.HELLHOUND, 0xc82000, 0x802020, gen()));
 	public static final Item DEMON_SPAWN_EGG = create("demon_spawn_egg", new SpawnEggItem(BWEntityTypes.DEMON, 0x802020, 0xc82000, gen()));
 	public static final Item LEONARD_SPAWN_EGG = create("leonard_spawn_egg", new SpawnEggItem(BWEntityTypes.LEONARD, 0x5e3214, 0xa00303, gen()));
 	public static final Item BAPHOMET_SPAWN_EGG = create("baphomet_spawn_egg", new SpawnEggItem(BWEntityTypes.BAPHOMET, 0xa00303, 0x5e3214, gen()));
 	public static final Item LILITH_SPAWN_EGG = create("lilith_spawn_egg", new SpawnEggItem(BWEntityTypes.LILITH, 0x222621, 0xc9cbcd, gen()));
 	public static final Item HERNE_SPAWN_EGG = create("herne_spawn_egg", new SpawnEggItem(BWEntityTypes.HERNE, 0x5d482d, 0x294e00, gen()));
+	//books
+	public static final Item BOOK_OF_SHADOWS = create("book_of_shadows", new BWBookItem(gen().maxCount(1)));
 	
 	private static <T extends Block> T create(String name, T block, boolean createItem) {
 		BLOCKS.put(block, new Identifier(Bewitchment.MODID, name));

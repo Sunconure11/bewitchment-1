@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '0.5-SNAPSHOT'
+    id 'fabric-loom' version '0.6-SNAPSHOT'
     id 'maven-publish'
 }
 
@@ -10,33 +10,90 @@ archivesBaseName = project.archives_base_name
 version = project.mod_version
 group = project.maven_group
 
+minecraft {
+    accessWidener "src/main/resources/bewitchment.accesswidener"
+}
+
 repositories {
     maven {
-        name = "reach"
-        url = "https://maven.jamieswhiteshirt.com/libs-release"
+        name "terraform wood api, trinkets"
+        url "https://maven.terraformersmc.com"
+    }
+    maven {
+        name "reach entity attributes"
+        url "https://maven.jamieswhiteshirt.com/libs-release"
+        content {
+            includeGroup "com.jamieswhiteshirt"
+        }
+    }
+    maven {
+        name "player ability lib, impersonate"
+        url "https://dl.bintray.com/ladysnake/libs"
+    }
+    maven {
+        name "cloth config, roughly enough items"
+        url "https://maven.shedaniel.me"
+    }
+    maven {
+        name "somnus"
+        url "https://maven.theillusivec4.top"
+    }
+    maven {
+        name "patchouli"
+        url "https://maven.blamejared.com"
+    }
+    maven {
+        name "trinkets"
+        url "https://maven.abusedmaster.xyz"
+    }
+    maven {
+        name "requiem"
+        url "https://dl.bintray.com/ladysnake/mods"
+    }
+    maven {
+        name "fall flying lib"
+        url "https://dl.bintray.com/adriantodt/maven"
+    }
+    maven {
+        name "jitpack"
+        url "https://jitpack.io"
     }
 }
 
 dependencies {
-    minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-    modApi("me.shedaniel.cloth:config-2:${project.cloth_config_version}") {
-        exclude(group: "net.fabricmc.fabric-api")
-    }
-    include "me.shedaniel.cloth:config-2:${project.cloth_config_version}"
-    modApi("me.sargunvohra.mcmods:autoconfig1u:${project.auto_config_version}") {
-        exclude(group: "net.fabricmc.fabric-api")
-    }
-    include "me.sargunvohra.mcmods:autoconfig1u:${project.auto_config_version}"
-    modImplementation "com.terraformersmc.terraform-api:terraform-wood-api-v1:${project.terraform_wood_api_version}"
-    include "com.terraformersmc.terraform-api:terraform-wood-api-v1:${project.terraform_wood_api_version}"
-    modImplementation "com.jamieswhiteshirt:reach-entity-attributes:${project.reach_version}"
-    include "com.jamieswhiteshirt:reach-entity-attributes:${project.reach_version}"
+    minecraft "com.mojang:minecraft:${minecraft_version}"
+    mappings "net.fabricmc:yarn:${yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_version}"
+    modImplementation "com.terraformersmc.terraform-api:terraform-wood-api-v1:${terraform_wood_api_version}"
+    include "com.terraformersmc.terraform-api:terraform-wood-api-v1:${terraform_wood_api_version}"
+    modImplementation "com.jamieswhiteshirt:reach-entity-attributes:${reach_version}"
+    include "com.jamieswhiteshirt:reach-entity-attributes:${reach_version}"
+    modImplementation "com.github.emilyploszaj:step-height-entity-attribute:${step_height_version}"
+    include "com.github.emilyploszaj:step-height-entity-attribute:${step_height_version}"
+    modImplementation "io.github.ladysnake:PlayerAbilityLib:${pal_version}"
+    include "io.github.ladysnake:PlayerAbilityLib:${pal_version}"
 
-    modCompileOnly "me.shedaniel:RoughlyEnoughItems-api:${project.rei_version}"
-    modRuntime "me.shedaniel:RoughlyEnoughItems:${project.rei_version}"
+    modImplementation("me.shedaniel.cloth:cloth-config-fabric:${cloth_config_version}") {
+        exclude(group: "net.fabricmc.fabric-api")
+    }
+    modImplementation "top.theillusivec4.somnus:somnus-fabric:${somnus_version}"
+    modImplementation("com.github.virtuoel:pehkui:${pehkui_version}") {
+        exclude(group: "net.fabricmc.fabric-api")
+    }
+    modImplementation "io.github.ladysnake:Impersonate:${impersonate_version}"
+    modImplementation "vazkii.patchouli:Patchouli:${patchouli_version}"
+    modImplementation "dev.emi:trinkets:${trinkets_version}"
+
+    modCompileOnly "me.shedaniel:RoughlyEnoughItems-api:${rei_version}"
+    modRuntime "me.shedaniel:RoughlyEnoughItems:${rei_version}"
+    modImplementation "io.github.emilyalexandra:nourish:${nourish_version}"
+    modImplementation "io.github.ladysnake:requiem-api:${requiem_version}"
+    modRuntime "io.github.ladysnake:requiem:${requiem_version}"
+    modImplementation "net.adriantodt.fabricmc:fallflyinglib:${project.ffl_version}"
+    modImplementation("com.github.apace100:origins-fabric:${project.origins_version}") {
+        exclude(group: "*")
+    }
 }
 
 processResources {
@@ -56,6 +113,31 @@ tasks.withType(JavaCompile) {
     options.encoding = "UTF-8"
 }
 
+task sourcesJar(type: Jar, dependsOn: classes) {
+    classifier = "sources"
+    from sourceSets.main.allSource
+}
+
 jar {
     from "LICENSE"
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            // add all the jars that should be included when publishing to maven
+            artifact(remapJar) {
+                builtBy remapJar
+            }
+            artifact(sourcesJar) {
+                builtBy remapSourcesJar
+            }
+        }
+    }
+
+    repositories {
+        // select the repositories you want to publish to
+        // uncomment to publish to the local maven
+        // mavenLocal()
+    }
 }

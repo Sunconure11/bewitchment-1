@@ -1,19 +1,18 @@
 package moriyashiine.bewitchment.common.entity.living.util;
 
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityData;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.SpawnReason;
+import net.minecraft.entity.*;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.data.DataTracker;
 import net.minecraft.entity.data.TrackedData;
 import net.minecraft.entity.data.TrackedDataHandlerRegistry;
+import net.minecraft.entity.mob.CreeperEntity;
+import net.minecraft.entity.mob.GhastEntity;
+import net.minecraft.entity.passive.HorseBaseEntity;
 import net.minecraft.entity.passive.TameableEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.PersistentProjectileEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.world.LocalDifficulty;
@@ -44,30 +43,6 @@ public abstract class BWTameableEntity extends TameableEntity {
 	}
 	
 	@Override
-	protected void initDataTracker() {
-		super.initDataTracker();
-		if (getVariants() > 1) {
-			dataTracker.startTracking(VARIANT, 0);
-		}
-	}
-	
-	@Override
-	public void readCustomDataFromTag(CompoundTag tag) {
-		super.readCustomDataFromTag(tag);
-		if (getVariants() > 1) {
-			dataTracker.set(VARIANT, tag.getInt("Variant"));
-		}
-	}
-	
-	@Override
-	public void writeCustomDataToTag(CompoundTag tag) {
-		super.writeCustomDataToTag(tag);
-		if (getVariants() > 1) {
-			tag.putInt("Variant", dataTracker.get(VARIANT));
-		}
-	}
-	
-	@Override
 	public EntityData initialize(ServerWorldAccess world, LocalDifficulty difficulty, SpawnReason spawnReason, @Nullable EntityData entityData, @Nullable CompoundTag entityTag) {
 		int variants = getVariants();
 		if (variants > 1) {
@@ -90,41 +65,80 @@ public abstract class BWTameableEntity extends TameableEntity {
 	public ActionResult interactMob(PlayerEntity player, Hand hand) {
 		boolean client = world.isClient;
 		ItemStack stack = player.getStackInHand(hand);
-		if (!isTamed() && isTamingItem(stack)) {
-			if (!player.abilities.creativeMode) {
-				stack.decrement(1);
-			}
-			if (!isSilent()) {
-				world.playSound(null, getX(), getY(), getZ(), SoundEvents.ENTITY_PARROT_EAT, getSoundCategory(), 1, 1 + (random.nextFloat() - random.nextFloat()) * 0.2f);
-			}
-			if (!client) {
-				if (random.nextInt(4) == 0) {
-					setOwner(player);
-					setSitting(true);
-					navigation.stop();
-					world.sendEntityStatus(this, (byte) 7);
-				}
-				else {
-					world.sendEntityStatus(this, (byte) 6);
-				}
-			}
-			return ActionResult.success(client);
-		}
-		else if (isTamed() && isOwner(player)) {
-			if (!client) {
-				if (isBreedingItem(stack) && getHealth() < getMaxHealth()) {
-					if (!player.abilities.creativeMode) {
-						stack.decrement(1);
-					}
+		if (isBreedingItem(stack)) {
+			if (getHealth() < getMaxHealth()) {
+				if (!client) {
+					eat(player, stack);
 					heal(4);
 				}
-				else {
-					setSitting(!isSitting());
+				return ActionResult.success(client);
+			}
+		}
+		else {
+			if (!isTamed()) {
+				if (isTamingItem(stack)) {
+					if (!client) {
+						eat(player, stack);
+						if (random.nextInt(4) == 0) {
+							setOwner(player);
+							setSitting(true);
+							setTarget(null);
+							navigation.stop();
+							world.sendEntityStatus(this, (byte) 7);
+						}
+						else {
+							world.sendEntityStatus(this, (byte) 6);
+						}
+					}
+					return ActionResult.success(client);
 				}
 			}
-			return ActionResult.success(client);
+			else if (isOwner(player)) {
+				if (!client) {
+					setSitting(!isSitting());
+				}
+				return ActionResult.success(client);
+			}
 		}
 		return super.interactMob(player, hand);
+	}
+	
+	@Override
+	public boolean canAttackWithOwner(LivingEntity target, LivingEntity owner) {
+		if (target instanceof TameableEntity && ((TameableEntity) target).isTamed()) {
+			return false;
+		}
+		if (target instanceof HorseBaseEntity && ((HorseBaseEntity) target).isTame()) {
+			return false;
+		}
+		if (target instanceof PlayerEntity && owner instanceof PlayerEntity && !((PlayerEntity) owner).shouldDamagePlayer((PlayerEntity) target)) {
+			return false;
+		}
+		return !(target instanceof CreeperEntity) && !(target instanceof GhastEntity);
+	}
+	
+	@Override
+	protected void initDataTracker() {
+		super.initDataTracker();
+		if (getVariants() > 1) {
+			dataTracker.startTracking(VARIANT, 1);
+		}
+	}
+	
+	@Override
+	public void readCustomDataFromTag(CompoundTag tag) {
+		super.readCustomDataFromTag(tag);
+		if (getVariants() > 1) {
+			dataTracker.set(VARIANT, tag.getInt("Variant"));
+		}
+	}
+	
+	@Override
+	public void writeCustomDataToTag(CompoundTag tag) {
+		super.writeCustomDataToTag(tag);
+		if (getVariants() > 1) {
+			tag.putInt("Variant", dataTracker.get(VARIANT));
+		}
 	}
 	
 	protected abstract boolean hasShiny();

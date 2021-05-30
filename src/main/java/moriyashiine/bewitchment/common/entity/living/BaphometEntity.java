@@ -2,13 +2,20 @@ package moriyashiine.bewitchment.common.entity.living;
 
 import com.google.common.collect.Sets;
 import moriyashiine.bewitchment.api.BewitchmentAPI;
-import moriyashiine.bewitchment.api.interfaces.entity.ContractAccessor;
 import moriyashiine.bewitchment.api.interfaces.entity.Pledgeable;
 import moriyashiine.bewitchment.api.registry.Contract;
-import moriyashiine.bewitchment.common.Bewitchment;
+import moriyashiine.bewitchment.client.network.packet.SyncContractsPacket;
+import moriyashiine.bewitchment.client.network.packet.SyncDemonTradesPacket;
+import moriyashiine.bewitchment.client.screen.BaphometScreenHandler;
+import moriyashiine.bewitchment.common.entity.interfaces.DemonMerchant;
 import moriyashiine.bewitchment.common.entity.living.util.BWHostileEntity;
-import moriyashiine.bewitchment.common.registry.*;
+import moriyashiine.bewitchment.common.misc.BWUtil;
+import moriyashiine.bewitchment.common.registry.BWPledges;
+import moriyashiine.bewitchment.common.registry.BWRegistries;
+import moriyashiine.bewitchment.common.registry.BWSoundEvents;
+import moriyashiine.bewitchment.common.registry.BWStatusEffects;
 import moriyashiine.bewitchment.mixin.StatusEffectAccessor;
+import net.fabricmc.fabric.api.util.NbtType;
 import net.minecraft.block.BlockState;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityGroup;
@@ -28,28 +35,32 @@ import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.FireballEntity;
-import net.minecraft.item.ArmorItem;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.screen.SimpleNamedScreenHandlerFactory;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.sound.SoundEvent;
-import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.Text;
-import net.minecraft.text.TranslatableText;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Collection;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
-@SuppressWarnings("ConstantConditions")
-public class BaphometEntity extends BWHostileEntity implements Pledgeable {
+public class BaphometEntity extends BWHostileEntity implements Pledgeable, DemonMerchant {
 	private final ServerBossBar bossBar;
-	private int timeSinceLastAttack = 0;
 	
+	private final Set<UUID> pledgedPlayerUUIDS = new HashSet<>();
+	private int timeSinceLastAttack = 0;
 	public int flameIndex = random.nextInt(8);
+	
+	private final List<DemonEntity.DemonTradeOffer> offers = new ArrayList<>();
+	private PlayerEntity customer = null;
+	private int tradeResetTimer = 0;
 	
 	public BaphometEntity(EntityType<? extends HostileEntity> entityType, World world) {
 		super(entityType, world);
@@ -69,6 +80,11 @@ public class BaphometEntity extends BWHostileEntity implements Pledgeable {
 		flameIndex = ++flameIndex % 8;
 		if (!world.isClient) {
 			bossBar.setPercent(getHealth() / getMaxHealth());
+			tradeResetTimer++;
+			if (tradeResetTimer >= 168000) {
+				tradeResetTimer = 0;
+				offers.clear();
+			}
 			LivingEntity target = getTarget();
 			int timer = age + getEntityId();
 			if (timer % 20 == 0) {
@@ -77,7 +93,7 @@ public class BaphometEntity extends BWHostileEntity implements Pledgeable {
 			if (target != null) {
 				timeSinceLastAttack++;
 				if (timeSinceLastAttack >= 600) {
-					BewitchmentAPI.teleport(this, target.getX(), target.getY(), target.getZ(), true);
+					BWUtil.teleport(this, target.getX(), target.getY(), target.getZ(), true);
 					timeSinceLastAttack = 0;
 				}
 				lookAtEntity(target, 360, 360);
@@ -105,8 +121,13 @@ public class BaphometEntity extends BWHostileEntity implements Pledgeable {
 	}
 	
 	@Override
-	public UUID getPledgeUUID() {
-		return BWPledges.BAPHOMET_UUID;
+	public String getPledgeID() {
+		return BWPledges.BAPHOMET;
+	}
+	
+	@Override
+	public Collection<UUID> getPledgedPlayerUUIDs() {
+		return pledgedPlayerUUIDS;
 	}
 	
 	@Override
@@ -117,6 +138,11 @@ public class BaphometEntity extends BWHostileEntity implements Pledgeable {
 	@Override
 	public Collection<StatusEffectInstance> getMinionBuffs() {
 		return Sets.newHashSet(new StatusEffectInstance(StatusEffects.RESISTANCE, Integer.MAX_VALUE), new StatusEffectInstance(BWStatusEffects.HARDENING, Integer.MAX_VALUE, 1));
+	}
+	
+	@Override
+	public int getTimeSinceLastAttack() {
+		return timeSinceLastAttack;
 	}
 	
 	@Override
@@ -157,28 +183,22 @@ public class BaphometEntity extends BWHostileEntity implements Pledgeable {
 	
 	@Override
 	protected ActionResult interactMob(PlayerEntity player, Hand hand) {
-		if (isAlive() && getTarget() == null) {
-			boolean client = world.isClient;
-			if (!client) {
-				if (BewitchmentAPI.isPledged(world, getPledgeUUID(), player.getUuid())) {
-					if (player.experienceLevel >= 20 || player.isCreative()) {
-						Contract contract = null;
-						while (contract == null || !contract.canBeGiven) {
-							contract = BWRegistries.CONTRACTS.get(random.nextInt(BWRegistries.CONTRACTS.getEntries().size()));
-						}
-						Contract.Instance instance = new Contract.Instance(contract, 168000);
-						((ContractAccessor) player).addContract(instance);
-						player.sendMessage(new TranslatableText(Bewitchment.MODID + ".baphomet_contract", new TranslatableText("contract." + BWRegistries.CONTRACTS.getId(contract).toString().replace(":", "."))), true);
-						if (!player.isCreative()) {
-							player.addExperience(-551);
-							world.playSound(null, player.getBlockPos(), SoundEvents.ENTITY_PLAYER_LEVELUP, player.getSoundCategory(), 1, 0.5f);
-						}
-					}
-				}
+		if (!world.isClient && isAlive() && getTarget() == null && BewitchmentAPI.isPledged(player, getPledgeID())) {
+			if (BWUtil.rejectTrades(this)) {
+				return ActionResult.FAIL;
 			}
-			return ActionResult.success(client);
+			if (getCurrentCustomer() == null) {
+				setCurrentCustomer(player);
+			}
+			if (!getOffers().isEmpty()) {
+				SyncContractsPacket.send(player);
+				player.openHandledScreen(new SimpleNamedScreenHandlerFactory((id, playerInventory, customer) -> new BaphometScreenHandler(id, this), getDisplayName())).ifPresent(syncId -> SyncDemonTradesPacket.send(player, this, syncId));
+			}
+			else {
+				setCurrentCustomer(null);
+			}
 		}
-		return super.interactMob(player, hand);
+		return ActionResult.success(world.isClient);
 	}
 	
 	@Override
@@ -228,6 +248,20 @@ public class BaphometEntity extends BWHostileEntity implements Pledgeable {
 	}
 	
 	@Override
+	public void onDeath(DamageSource source) {
+		super.onDeath(source);
+		setCurrentCustomer(null);
+	}
+	
+	@Override
+	public void setTarget(@Nullable LivingEntity target) {
+		super.setTarget(target);
+		if (target != null) {
+			setCurrentCustomer(null);
+		}
+	}
+	
+	@Override
 	public void onStartedTrackingBy(ServerPlayerEntity player) {
 		super.onStartedTrackingBy(player);
 		bossBar.addPlayer(player);
@@ -245,23 +279,76 @@ public class BaphometEntity extends BWHostileEntity implements Pledgeable {
 		if (hasCustomName()) {
 			bossBar.setName(getDisplayName());
 		}
-		timeSinceLastAttack = tag.getInt("TimeSinceLastAttack");
+		fromTagPledgeable(tag);
+		if (tag.contains("Offers")) {
+			offers.clear();
+			ListTag offersTag = tag.getList("Offers", NbtType.COMPOUND);
+			for (Tag offerTag : offersTag) {
+				offers.add(new DemonEntity.DemonTradeOffer((CompoundTag) offerTag));
+			}
+		}
+		tradeResetTimer = tag.getInt("TradeResetTimer");
 	}
 	
 	@Override
 	public void writeCustomDataToTag(CompoundTag tag) {
 		super.writeCustomDataToTag(tag);
-		tag.putInt("TimeSinceLastAttack", timeSinceLastAttack);
+		toTagPledgeable(tag);
+		if (!offers.isEmpty()) {
+			ListTag offersTag = new ListTag();
+			for (DemonEntity.DemonTradeOffer offer : offers) {
+				offersTag.add(offer.toTag());
+			}
+			tag.put("Offers", offersTag);
+		}
+		tag.putInt("TradeResetTimer", tradeResetTimer);
 	}
 	
 	@Override
 	protected void initGoals() {
 		goalSelector.add(0, new SwimGoal(this));
-		goalSelector.add(1, new MeleeAttackGoal(this, 1, true));
-		goalSelector.add(2, new WanderAroundFarGoal(this, 1));
-		goalSelector.add(3, new LookAtEntityGoal(this, PlayerEntity.class, 8));
-		goalSelector.add(3, new LookAroundGoal(this));
+		goalSelector.add(1, new DemonEntity.LookAtCustomerGoal<>(this));
+		goalSelector.add(2, new MeleeAttackGoal(this, 1, true));
+		goalSelector.add(3, new WanderAroundFarGoal(this, 1));
+		goalSelector.add(4, new LookAtEntityGoal(this, PlayerEntity.class, 8));
+		goalSelector.add(5, new LookAroundGoal(this));
 		targetSelector.add(0, new RevengeGoal(this));
-		targetSelector.add(1, new FollowTargetGoal<>(this, LivingEntity.class, 10, true, false, entity -> entity.getGroup() != BewitchmentAPI.DEMON && BewitchmentAPI.getArmorPieces(entity, stack -> stack.getItem() instanceof ArmorItem && ((ArmorItem) stack.getItem()).getMaterial() == BWMaterials.BESMIRCHED_ARMOR) < 3 && !(entity instanceof PlayerEntity && BewitchmentAPI.isPledged(world, getPledgeUUID(), entity.getUuid()))));
+		targetSelector.add(1, BWUtil.createGenericPledgeableTargetGoal(this));
+	}
+	
+	@Override
+	public List<DemonEntity.DemonTradeOffer> getOffers() {
+		if (offers.isEmpty()) {
+			List<Contract> availableContracts = BWRegistries.CONTRACTS.stream().collect(Collectors.toList());
+			for (int i = 0; i < 5; i++) {
+				Contract contract = availableContracts.get(random.nextInt(availableContracts.size()));
+				offers.add(new DemonEntity.DemonTradeOffer(contract, 72000, 2 + random.nextInt(2) * 2));
+				availableContracts.remove(contract);
+			}
+		}
+		return offers;
+	}
+	
+	@Override
+	public LivingEntity getDemonTrader() {
+		return this;
+	}
+	
+	@Override
+	public void onSell(DemonEntity.DemonTradeOffer offer) {
+		if (!world.isClient) {
+			world.playSound(null, getBlockPos(), BWSoundEvents.ITEM_CONTRACT_USE, getSoundCategory(), getSoundVolume(), getSoundPitch());
+			world.playSound(null, getBlockPos(), getAmbientSound(), getSoundCategory(), getSoundVolume(), getSoundPitch());
+		}
+	}
+	
+	@Override
+	public void setCurrentCustomer(PlayerEntity customer) {
+		this.customer = customer;
+	}
+	
+	@Override
+	public @Nullable PlayerEntity getCurrentCustomer() {
+		return customer;
 	}
 }

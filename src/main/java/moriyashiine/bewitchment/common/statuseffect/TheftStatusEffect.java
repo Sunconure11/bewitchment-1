@@ -7,9 +7,10 @@ import net.minecraft.entity.attribute.AttributeContainer;
 import net.minecraft.entity.effect.StatusEffect;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffectType;
-import net.minecraft.util.registry.Registry;
 
-@SuppressWarnings("ConstantConditions")
+import java.util.List;
+import java.util.stream.Collectors;
+
 public class TheftStatusEffect extends StatusEffect {
 	public TheftStatusEffect(StatusEffectType type, int color) {
 		super(type, color);
@@ -22,13 +23,14 @@ public class TheftStatusEffect extends StatusEffect {
 	
 	@Override
 	public void applyUpdateEffect(LivingEntity entity, int amplifier) {
-		if (entity.age % 20 == 0) {
-			entity.world.getEntitiesByClass(LivingEntity.class, entity.getBoundingBox().expand(3 * (amplifier + 1)), livingEntity -> livingEntity != entity).forEach(livingEntity -> Registry.STATUS_EFFECT.stream().forEach(effect -> {
-				if (effect != this && !livingEntity.getStatusEffect(effect).isAmbient() && ((StatusEffectAccessor) effect).bw_getType() == StatusEffectType.BENEFICIAL && livingEntity.hasStatusEffect(effect)) {
-					entity.addStatusEffect(new StatusEffectInstance(livingEntity.getStatusEffect(effect).getEffectType(), livingEntity.getStatusEffect(effect).getDuration() / 2, livingEntity.getStatusEffect(effect).getAmplifier()));
-					livingEntity.removeStatusEffect(effect);
+		if (!entity.world.isClient && entity.age % 20 == 0) {
+			entity.world.getEntitiesByClass(LivingEntity.class, entity.getBoundingBox().expand(3 * (amplifier + 1)), livingEntity -> livingEntity != entity).forEach(livingEntity -> {
+				List<StatusEffectInstance> statusEffects = livingEntity.getStatusEffects().stream().filter(instance -> ((StatusEffectAccessor) instance.getEffectType()).bw_getType() == StatusEffectType.BENEFICIAL && !instance.isAmbient()).collect(Collectors.toList());
+				for (StatusEffectInstance statusEffect : statusEffects) {
+					entity.addStatusEffect(new StatusEffectInstance(statusEffect.getEffectType(), statusEffect.getDuration() / 2, statusEffect.getAmplifier()));
+					livingEntity.removeStatusEffect(statusEffect.getEffectType());
 				}
-			}));
+			});
 		}
 	}
 	

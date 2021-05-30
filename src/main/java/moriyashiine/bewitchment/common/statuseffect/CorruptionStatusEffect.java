@@ -3,7 +3,6 @@ package moriyashiine.bewitchment.common.statuseffect;
 import moriyashiine.bewitchment.common.registry.BWStatusEffects;
 import moriyashiine.bewitchment.mixin.StatusEffectAccessor;
 import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.attribute.AttributeContainer;
 import net.minecraft.entity.effect.StatusEffect;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffectType;
@@ -42,20 +41,27 @@ public class CorruptionStatusEffect extends StatusEffect {
 	}
 	
 	@Override
-	public void onApplied(LivingEntity entity, AttributeContainer attributes, int amplifier) {
-		Registry.STATUS_EFFECT.stream().forEach(effect -> {
-			if (((StatusEffectAccessor) effect).bw_getType() == StatusEffectType.BENEFICIAL && entity.hasStatusEffect(effect)) {
-				StatusEffect inverse = INVERSE_EFFECTS.get(effect);
-				StatusEffectInstance inverseEffect = null;
-				if (inverse != null) {
-					StatusEffectInstance goodEffect = entity.getStatusEffect(effect);
-					inverseEffect = new StatusEffectInstance(inverse, goodEffect.getDuration(), goodEffect.getAmplifier(), goodEffect.isAmbient(), goodEffect.shouldShowParticles(), goodEffect.shouldShowIcon());
+	public boolean canApplyUpdateEffect(int duration, int amplifier) {
+		return true;
+	}
+	
+	@Override
+	public void applyUpdateEffect(LivingEntity entity, int amplifier) {
+		if (!entity.world.isClient) {
+			Registry.STATUS_EFFECT.stream().forEach(effect -> {
+				if (((StatusEffectAccessor) effect).bw_getType() == StatusEffectType.BENEFICIAL && entity.hasStatusEffect(effect) && !entity.getStatusEffect(effect).isAmbient()) {
+					StatusEffect inverse = INVERSE_EFFECTS.get(effect);
+					StatusEffectInstance inverseEffect = null;
+					if (inverse != null) {
+						StatusEffectInstance goodEffect = entity.getStatusEffect(effect);
+						inverseEffect = new StatusEffectInstance(inverse, goodEffect.getDuration(), goodEffect.getAmplifier(), goodEffect.isAmbient(), goodEffect.shouldShowParticles(), goodEffect.shouldShowIcon());
+					}
+					entity.removeStatusEffect(effect);
+					if (inverseEffect != null) {
+						entity.addStatusEffect(inverseEffect);
+					}
 				}
-				entity.removeStatusEffect(effect);
-				if (inverseEffect != null) {
-					entity.addStatusEffect(inverseEffect);
-				}
-			}
-		});
+			});
+		}
 	}
 }

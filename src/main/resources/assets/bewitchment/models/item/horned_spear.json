@@ -631,17 +631,22 @@
   ],
   "display": {
 	"ground": {
-	  "rotation": [
+	  "translation": [
 		0,
-		0,
-		90
+		2.75,
+		-0.3
+	  ],
+	  "scale": [
+		0.2,
+		0.2,
+		0.2
 	  ]
 	},
 	"gui": {
 	  "rotation": [
 		0,
 		0,
-		45
+		-45
 	  ],
 	  "scale": [
 		0.6,

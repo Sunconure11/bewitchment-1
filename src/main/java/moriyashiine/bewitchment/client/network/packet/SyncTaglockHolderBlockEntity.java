@@ -1,8 +1,8 @@
 package moriyashiine.bewitchment.client.network.packet;
 
 import io.netty.buffer.Unpooled;
-import moriyashiine.bewitchment.common.block.entity.interfaces.TaglockHolder;
 import moriyashiine.bewitchment.common.Bewitchment;
+import moriyashiine.bewitchment.common.block.entity.interfaces.TaglockHolder;
 import net.fabricmc.fabric.api.networking.v1.PacketSender;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.block.entity.BlockEntity;
@@ -34,10 +34,13 @@ public class SyncTaglockHolderBlockEntity {
 		ItemStack two = buf.readItemStack();
 		ItemStack three = buf.readItemStack();
 		client.execute(() -> {
-			TaglockHolder taglockHolder = (TaglockHolder) client.world.getBlockEntity(pos);
-			taglockHolder.getTaglockInventory().set(0, one);
-			taglockHolder.getTaglockInventory().set(1, two);
-			taglockHolder.getTaglockInventory().set(2, three);
+			BlockEntity blockEntity = client.world.getBlockEntity(pos);
+			if (blockEntity instanceof TaglockHolder) {
+				TaglockHolder taglockHolder = (TaglockHolder) blockEntity;
+				taglockHolder.getTaglockInventory().set(0, one);
+				taglockHolder.getTaglockInventory().set(1, two);
+				taglockHolder.getTaglockInventory().set(2, three);
+			}
 		});
 	}
 }
